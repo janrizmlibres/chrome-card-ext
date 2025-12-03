@@ -11,12 +11,12 @@ app.use(cors());
 app.use(express.json());
 
 // Middleware to simulate auth (just getting user-123 for now)
-const MOCK_USER_ID = 'user-123';
+// const MOCK_USER_ID = 'user-123';
 
 // --- Routes ---
 
 // GET /api/cards (Admin/All cards)
-app.get('/api/cards', (req, res) => {
+app.get('/api/cards', (_req, res) => {
   // Sort by rotation logic: last_used ASC (nulls first), usage_count ASC
   const sortedCards = [...db.cards].sort((a, b) => {
     // Sort by cooldown status first (available first)
@@ -167,4 +167,7 @@ app.post('/api/selectorProfiles', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Mock Backend running on http://localhost:${PORT}`);
+  
+  // Keep process alive (required for some environments where event loop might drain)
+  setInterval(() => {}, 1 << 30);
 });
