@@ -1,0 +1,56 @@
+import { Card, User } from './types';
+
+export const MOCK_USER: User = {
+  id: 'user-123',
+  email: 'demo@example.com',
+  role: 'admin',
+  slash_group_id: 'group-abc',
+};
+
+export const MOCK_CARDS: Card[] = [
+  {
+    id: 'card-1',
+    slash_card_id: 'slash-1',
+    last4: '4242',
+    brand: 'Visa',
+    exp_month: 12,
+    exp_year: 2025,
+    created_by: 'user-123',
+    labels: ['Shopping', 'Personal'],
+    last_used: '2023-10-25T10:00:00Z',
+    usage_count: 5,
+    excluded_until: null,
+    active: true,
+    created_at: '2023-01-01T00:00:00Z',
+  },
+  {
+    id: 'card-2',
+    slash_card_id: 'slash-2',
+    last4: '8888',
+    brand: 'MasterCard',
+    exp_month: 11,
+    exp_year: 2026,
+    created_by: 'user-123',
+    labels: ['Subscriptions'],
+    last_used: null,
+    usage_count: 0,
+    excluded_until: null,
+    active: true,
+    created_at: '2023-02-01T00:00:00Z',
+  },
+  {
+    id: 'card-3',
+    slash_card_id: 'slash-3',
+    last4: '1234',
+    brand: 'Amex',
+    exp_month: 5,
+    exp_year: 2024,
+    created_by: 'user-123',
+    labels: ['Travel'],
+    last_used: '2023-10-26T08:00:00Z',
+    usage_count: 12,
+    excluded_until: '2023-10-26T08:30:00Z', // Cooldown active example
+    active: true,
+    created_at: '2023-03-01T00:00:00Z',
+  },
+];
