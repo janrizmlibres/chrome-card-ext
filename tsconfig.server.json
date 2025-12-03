@@ -9,5 +9,5 @@
     "esModuleInterop": true,
     "noImplicitAny": false
   },
-  "include": ["server"]
+  "include": ["server", "src"]
 }
