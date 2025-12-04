@@ -86,13 +86,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'AUTOFILL_NEXT') {
-    // 1. Get best card
-    fetch('http://localhost:3000/api/cards')
+    // 1. Get best card (active only)
+    fetch('http://localhost:3000/api/cards?activeOnly=true')
       .then(res => res.json())
       .then(cards => {
         const bestCard = cards[0]; // Already sorted by backend
         if (!bestCard) {
-          sendResponse({ error: 'No cards available' });
+          sendResponse({ error: 'No active cards available' });
           return;
         }
         
@@ -104,14 +104,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     card: bestCard
                 });
                 
-                // 3. Mark used
-                fetch(`http://localhost:3000/api/cards/${bestCard.id}/mark_used`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cooldownInterval: 30 })
-                });
+                // Mark used is now handled by content script callback via MARK_USED message
                 
                 sendResponse({ success: true, card: bestCard });
+            } else {
+                sendResponse({ error: 'No active tab' });
+            }
+        });
+      })
+      .catch(err => sendResponse({ error: err.message }));
+      return true;
+  }
+
+  if (message.type === 'AUTOFILL_CARD') {
+    const { cardId } = message.payload;
+    fetch('http://localhost:3000/api/cards')
+      .then(res => res.json())
+      .then(cards => {
+        const card = cards.find((c: any) => c.id === cardId);
+        if (!card) {
+          sendResponse({ error: 'Card not found' });
+          return;
+        }
+        
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.id) {
+                chrome.tabs.sendMessage(tabs[0].id, {
+                    type: 'FILL_FIELDS',
+                    card: card
+                });
+                sendResponse({ success: true, card });
             } else {
                 sendResponse({ error: 'No active tab' });
             }

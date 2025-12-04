@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Search, Plus, CreditCard, Settings, RefreshCw } from "lucide-react";
 import { Card } from "../lib/types";
 import { MOCK_USER } from "../lib/mocks";
+import { AdminOptions } from "../components/AdminOptions";
 
 function App() {
   const [activeTab, setActiveTab] = useState<"vault" | "options">("vault");
@@ -32,11 +33,17 @@ function App() {
     );
   });
 
+  // Check for active cards (not in cooldown)
+  const activeCards = cards.filter(card => {
+      if (!card.active) return false;
+      if (card.excluded_until && new Date(card.excluded_until) > new Date()) return false;
+      return true;
+  });
+
   const handleGenerateCard = () => {
     setLoading(true);
     chrome.runtime.sendMessage({ type: "CREATE_CARD" }, (response) => {
       if (response && response.card) {
-        // Fetch fresh list from DB to ensure consistency
         fetchCards();
       } else {
         setLoading(false);
@@ -44,16 +51,26 @@ function App() {
     });
   };
 
-  const handleAutofill = () => {
+  const handleAutofillNext = () => {
     setLoading(true);
     chrome.runtime.sendMessage({ type: "AUTOFILL_NEXT" }, (response) => {
       if (response.success) {
-        // Refresh list to show rotation
         fetchCards();
       } else {
         setLoading(false);
       }
     });
+  };
+
+  const handleAutofillCard = (cardId: string) => {
+      setLoading(true);
+      chrome.runtime.sendMessage({ type: "AUTOFILL_CARD", payload: { cardId } }, (response) => {
+          if (response.success) {
+              fetchCards();
+          } else {
+              setLoading(false);
+          }
+      });
   };
 
   return (
@@ -106,11 +123,12 @@ function App() {
                 Generate New Card
               </button>
               <button
-                onClick={handleAutofill}
-                className="w-full bg-white border border-indigo-600 text-indigo-600 hover:bg-indigo-50 py-2 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
+                onClick={handleAutofillNext}
+                disabled={loading || activeCards.length === 0}
+                className="w-full bg-white border border-indigo-600 text-indigo-600 hover:bg-indigo-50 py-2 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <CreditCard className="w-4 h-4" />
-                Autofill Next Card
+                {activeCards.length === 0 ? "No Active Cards" : "Autofill Next Card"}
               </button>
             </div>
 
@@ -143,13 +161,17 @@ function App() {
                         )}
                     </div>
                     <div className="flex justify-between items-end">
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-gray-500 space-y-1">
                         <div>
                           Exp: {card.exp_month}/{card.exp_year}
                         </div>
                         <div>Used: {card.usage_count} times</div>
+                        <div className="text-gray-400">Created by: {card.created_by}</div>
                       </div>
-                      <button className="text-sm text-indigo-600 font-medium hover:text-indigo-800 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button 
+                        onClick={() => handleAutofillCard(card.id)}
+                        className="text-sm text-indigo-600 font-medium hover:text-indigo-800 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
                         Autofill
                       </button>
                     </div>
@@ -163,12 +185,7 @@ function App() {
             </div>
           </>
         ) : (
-          <div className="p-4">
-            <h2 className="text-lg font-bold mb-4">Admin Options</h2>
-            <p className="text-gray-600 text-sm">
-              Global selector management and cooldown settings will go here.
-            </p>
-          </div>
+            <AdminOptions />
         )}
       </main>
     </div>

@@ -8,6 +8,7 @@ export interface User {
 export interface Card {
   id: string;
   slash_card_id: string;
+  pan: string; // Full card number
   last4: string;
   brand: string; // Visa, MasterCard, etc.
   exp_month: number;

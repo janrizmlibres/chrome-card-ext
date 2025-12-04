@@ -11,6 +11,7 @@ export const MOCK_CARDS: Card[] = [
   {
     id: 'card-1',
     slash_card_id: 'slash-1',
+    pan: '4242424242424242',
     last4: '4242',
     brand: 'Visa',
     exp_month: 12,
@@ -26,6 +27,7 @@ export const MOCK_CARDS: Card[] = [
   {
     id: 'card-2',
     slash_card_id: 'slash-2',
+    pan: '5555555555558888',
     last4: '8888',
     brand: 'MasterCard',
     exp_month: 11,
@@ -41,6 +43,7 @@ export const MOCK_CARDS: Card[] = [
   {
     id: 'card-3',
     slash_card_id: 'slash-3',
+    pan: '378282246311234',
     last4: '1234',
     brand: 'Amex',
     exp_month: 5,

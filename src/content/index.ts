@@ -38,18 +38,39 @@ function handleFieldMapping(element: HTMLElement, type: string) {
               fieldType,
               selector
           }
+      }, (response) => {
+          if (response && response.success) {
+              console.log(`Saved ${fieldType} selector: ${selector}`);
+              // Visual feedback could be added here (e.g., flash border)
+              element.style.outline = "2px solid #4f46e5";
+              setTimeout(() => element.style.outline = "", 1000);
+          } else {
+              console.error('Failed to save selector:', response?.error);
+          }
       });
-      console.log(`Saved ${fieldType} selector: ${selector}`);
   }
 }
 
 function getCssSelector(el: HTMLElement): string {
   if (el.id) return `#${el.id}`;
-  if (el.className) {
-      // Simplify class selector
-      const classes = el.className.split(/\s+/).filter(c => c).join('.');
-      if (classes) return `.${classes}`;
+  
+  if (el.getAttribute('name')) {
+      return `${el.tagName.toLowerCase()}[name="${el.getAttribute('name')}"]`;
   }
+  
+  if (el.getAttribute('placeholder')) {
+      return `${el.tagName.toLowerCase()}[placeholder="${el.getAttribute('placeholder')}"]`;
+  }
+
+  if (el.className && typeof el.className === 'string') {
+      // Simplify class selector: take the first significant class or all if reasonable
+      // Excluding common utility classes might be hard without a list, so we try to use what's there
+      const classes = el.className.trim().split(/\s+/).filter(c => c);
+      if (classes.length > 0) {
+          return `.${classes.join('.')}`;
+      }
+  }
+  
   return el.tagName.toLowerCase();
 }
 
@@ -62,26 +83,48 @@ function fillFields(card: any) {
         if (response && response.profile) {
             const { cardNumberSelectors, cardExpirySelectors, cvvSelectors } = response.profile;
             
+            let filled = false;
+
             // Fill Number
-            fillInput(cardNumberSelectors, card.last4); // In real app this is full number
+            // Use PAN if available, else fall back (though type should enforce PAN)
+            const numberToFill = card.pan || card.last4;
+            const numFilled = fillInput(cardNumberSelectors, numberToFill);
+            if (numFilled) filled = true;
             
             // Fill Expiry
             // Simplified: assumes MM/YYYY or separate fields
-            fillInput(cardExpirySelectors, `${card.exp_month}/${card.exp_year}`);
+            const expFilled = fillInput(cardExpirySelectors, `${card.exp_month}/${card.exp_year}`);
+            if (expFilled) filled = true;
             
             // Handle CVV
             if (cvvSelectors && cvvSelectors.length > 0) {
                 const cvv = prompt(`Enter CVV for card ending in ${card.last4}:`);
-                if (cvv) fillInput(cvvSelectors, cvv);
+                if (cvv) {
+                    const cvvFilled = fillInput(cvvSelectors, cvv);
+                    if (cvvFilled) filled = true;
+                }
             }
+
+            if (filled) {
+                console.log('Autofill successful, marking card as used.');
+                chrome.runtime.sendMessage({
+                    type: 'MARK_USED',
+                    payload: { cardId: card.id }
+                });
+            } else {
+                console.log('Autofill failed: No matching fields found for saved selectors.');
+                // Optional: Notify user
+            }
+
         } else {
-            alert('No selectors saved for this domain.');
+            alert('No selectors saved for this domain. Please right-click input fields to map them first.');
         }
     });
 }
 
-function fillInput(selectors: string[], value: string) {
-    if (!selectors) return;
+function fillInput(selectors: string[], value: string): boolean {
+    if (!selectors) return false;
+    let filledAny = false;
     for (const sel of selectors) {
         const inputs = document.querySelectorAll(sel);
         inputs.forEach((input: any) => {
@@ -89,7 +132,9 @@ function fillInput(selectors: string[], value: string) {
                 input.value = value;
                 input.dispatchEvent(new Event('input', { bubbles: true }));
                 input.dispatchEvent(new Event('change', { bubbles: true }));
+                filledAny = true;
             }
         });
     }
+    return filledAny;
 }

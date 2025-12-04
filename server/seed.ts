@@ -33,6 +33,7 @@ async function seed() {
       // For this seed, let's keep consistent IDs if possible, but UUIDs might clash if not valid UUIDs.
       // MOCK_CARDS ids are 'card-1', which are not valid UUIDs. Let's remove them.
       slash_card_id: card.slash_card_id,
+      pan: card.pan,
       last4: card.last4,
       brand: card.brand,
       exp_month: card.exp_month,
