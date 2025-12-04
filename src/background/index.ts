@@ -33,34 +33,67 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 // Listen for messages from popup or content script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  console.log('[Background] Received message:', message.type);
+  
   if (message.type === 'GET_CARDS') {
-    fetch('http://localhost:3000/api/cards')
-      .then(res => res.json())
-      .then(data => sendResponse({ cards: data }))
-      .catch(err => sendResponse({ error: err.message }));
+    const { userId, role, groupId } = message.payload || {};
+    
+    const params = new URLSearchParams();
+    if (userId) params.append('userId', userId);
+    if (role) params.append('role', role);
+    if (groupId) params.append('groupId', groupId);
+    
+    console.log('[Background] Fetching cards with params:', params.toString());
+    
+    fetch(`http://localhost:3000/api/cards?${params.toString()}`)
+      .then(res => {
+        console.log('[Background] Got response:', res.status);
+        return res.json();
+      })
+      .then(data => {
+        console.log('[Background] Sending cards:', data?.length || 0);
+        sendResponse({ cards: data });
+      })
+      .catch(err => {
+        console.error('[Background] Error fetching cards:', err);
+        sendResponse({ error: err.message });
+      });
     return true; // Will respond asynchronously
   }
 
   if (message.type === 'CREATE_CARD') {
+    const { userId, groupId } = message.payload || {};
+    
+    console.log('[Background] Creating card with:', { userId, groupId });
+    
     fetch('http://localhost:3000/api/cards/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'user-123' }) // Mock user ID
+      body: JSON.stringify({ userId, groupId })
     })
-      .then(res => res.json())
-      .then(data => sendResponse({ card: data }))
-      .catch(err => sendResponse({ error: err.message }));
+      .then(res => {
+        console.log('[Background] Create card response status:', res.status);
+        return res.json();
+      })
+      .then(data => {
+        console.log('[Background] Created card:', data);
+        sendResponse({ card: data });
+      })
+      .catch(err => {
+        console.error('[Background] Error creating card:', err);
+        sendResponse({ error: err.message });
+      });
     return true;
   }
 
   if (message.type === 'SAVE_SELECTOR') {
-    const { domain, fieldType, selector } = message.payload;
+    const { domain, fieldType, selector, userId } = message.payload;
     fetch('http://localhost:3000/api/selectorProfiles', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        userId: 'user-123', 
+        userId: userId || 'user-123', // Fallback for backward compatibility
         domain, 
         fieldType, 
         selector 
@@ -79,14 +112,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         headers: { 'Content-Type': 'application/json' }
       })
       .then(res => res.json())
-      .then(data => sendResponse({ success: true }))
+      .then(() => sendResponse({ success: true }))
       .catch(err => console.error(err));
       // No response needed strictly
   }
 
   if (message.type === 'AUTOFILL_NEXT') {
+    const { userId, role, groupId } = message.payload || {};
+    
+    const params = new URLSearchParams({ activeOnly: 'true' });
+    if (userId) params.append('userId', userId);
+    if (role) params.append('role', role);
+    if (groupId) params.append('groupId', groupId);
+    
     // 1. Get best card (active only)
-    fetch('http://localhost:3000/api/cards?activeOnly=true')
+    fetch(`http://localhost:3000/api/cards?${params.toString()}`)
       .then(res => res.json())
       .then(cards => {
         const bestCard = cards[0]; // Already sorted by backend
@@ -116,8 +156,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'AUTOFILL_CARD') {
-    const { cardId } = message.payload;
-    fetch('http://localhost:3000/api/cards')
+    const { cardId, userId, role, groupId } = message.payload || {};
+    
+    const params = new URLSearchParams();
+    if (userId) params.append('userId', userId);
+    if (role) params.append('role', role);
+    if (groupId) params.append('groupId', groupId);
+    
+    fetch(`http://localhost:3000/api/cards?${params.toString()}`)
       .then(res => res.json())
       .then(cards => {
         const card = cards.find((c: any) => c.id === cardId);
@@ -143,8 +189,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'GET_SELECTORS') {
-      const { domain } = message.payload;
-      fetch(`http://localhost:3000/api/selectorProfiles?domain=${domain}&userId=user-123`)
+      const { domain, userId } = message.payload;
+      fetch(`http://localhost:3000/api/selectorProfiles?domain=${domain}&userId=${userId || 'user-123'}`)
         .then(res => res.json())
         .then(data => sendResponse({ profile: data }))
         .catch(err => sendResponse({ error: err.message }));

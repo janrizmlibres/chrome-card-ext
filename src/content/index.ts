@@ -8,7 +8,7 @@ document.addEventListener('contextmenu', (event) => {
   lastClickedElement = event.target as HTMLElement;
 }, true);
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'CONTEXT_MENU_CLICK') {
     console.log('Context menu clicked:', message.menuId);
     
@@ -31,22 +31,28 @@ function handleFieldMapping(element: HTMLElement, type: string) {
   else if (type === 'slash-set-cvv') fieldType = 'cardCvv';
 
   if (fieldType) {
-      chrome.runtime.sendMessage({
-          type: 'SAVE_SELECTOR',
-          payload: {
-              domain: window.location.hostname,
-              fieldType,
-              selector
-          }
-      }, (response) => {
-          if (response && response.success) {
-              console.log(`Saved ${fieldType} selector: ${selector}`);
-              // Visual feedback could be added here (e.g., flash border)
-              element.style.outline = "2px solid #4f46e5";
-              setTimeout(() => element.style.outline = "", 1000);
-          } else {
-              console.error('Failed to save selector:', response?.error);
-          }
+      // Get current user from storage
+      chrome.storage.local.get(['currentUser'], (result) => {
+          const userId = (result.currentUser as any)?.id;
+          
+          chrome.runtime.sendMessage({
+              type: 'SAVE_SELECTOR',
+              payload: {
+                  domain: window.location.hostname,
+                  fieldType,
+                  selector,
+                  userId
+              }
+          }, (response) => {
+              if (response && response.success) {
+                  console.log(`Saved ${fieldType} selector: ${selector}`);
+                  // Visual feedback could be added here (e.g., flash border)
+                  element.style.outline = "2px solid #4f46e5";
+                  setTimeout(() => element.style.outline = "", 1000);
+              } else {
+                  console.error('Failed to save selector:', response?.error);
+              }
+          });
       });
   }
 }
@@ -76,10 +82,13 @@ function getCssSelector(el: HTMLElement): string {
 
 function fillFields(card: any) {
     // 1. Get selectors for this domain
-    chrome.runtime.sendMessage({
-        type: 'GET_SELECTORS',
-        payload: { domain: window.location.hostname }
-    }, (response) => {
+    chrome.storage.local.get(['currentUser'], (result) => {
+        const userId = (result.currentUser as any)?.id;
+        
+        chrome.runtime.sendMessage({
+            type: 'GET_SELECTORS',
+            payload: { domain: window.location.hostname, userId }
+        }, (response) => {
         if (response && response.profile) {
             const { cardNumberSelectors, cardExpirySelectors, cvvSelectors } = response.profile;
             
@@ -120,6 +129,7 @@ function fillFields(card: any) {
         } else {
             alert('No selectors saved for this domain. Please right-click input fields to map them first.');
         }
+        });
     });
 }
 

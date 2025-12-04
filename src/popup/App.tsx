@@ -1,28 +1,78 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, CreditCard, Settings, RefreshCw } from "lucide-react";
+import { Search, Plus, CreditCard, Settings, RefreshCw, LogOut } from "lucide-react";
 import { Card } from "../lib/types";
-import { MOCK_USER } from "../lib/mocks";
 import { AdminOptions } from "../components/AdminOptions";
+import { Login } from "../components/Login";
+import { Signup } from "../components/Signup";
+import { ConfigError } from "../components/ConfigError";
+import { useAuth } from "../lib/useAuth";
+import { signOut } from "../lib/auth";
+import { isSupabaseConfigured } from "../lib/supabase";
+
+type AuthView = "login" | "signup";
 
 function App() {
+  console.log('[App] Component rendering...');
+  const { user, isLoading: authLoading } = useAuth();
+  console.log('[App] Auth state:', { user: user?.email, authLoading });
+  const [authView, setAuthView] = useState<AuthView>("login");
   const [activeTab, setActiveTab] = useState<"vault" | "options">("vault");
   const [cards, setCards] = useState<Card[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
 
   const fetchCards = () => {
+    console.log('[fetchCards] Starting...');
+    if (!user) {
+      console.log('[fetchCards] No user, returning');
+      return;
+    }
+    
+    console.log('[fetchCards] Setting loading to true');
     setLoading(true);
-    chrome.runtime.sendMessage({ type: "GET_CARDS" }, (response) => {
-      if (response && response.cards) {
-        setCards(response.cards);
-      }
+    
+    // Add timeout in case background script doesn't respond
+    const timeout = setTimeout(() => {
+      console.error('[fetchCards] TIMEOUT - background script not responding after 5 seconds');
       setLoading(false);
-    });
+    }, 5000);
+    
+    console.log('[fetchCards] Sending message to background...');
+    try {
+      chrome.runtime.sendMessage({ 
+        type: "GET_CARDS",
+        payload: { userId: user.id, role: user.role, groupId: user.slash_group_id }
+      }, (response) => {
+        clearTimeout(timeout);
+        
+        // Check for Chrome runtime errors
+        if (chrome.runtime.lastError) {
+          console.error('Chrome runtime error:', chrome.runtime.lastError);
+          setLoading(false);
+          return;
+        }
+        
+        if (response && response.cards) {
+          setCards(response.cards);
+        } else if (response && response.error) {
+          console.error('Error fetching cards:', response.error);
+        }
+        setLoading(false);
+      });
+    } catch (error) {
+      clearTimeout(timeout);
+      console.error('Error sending message:', error);
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    fetchCards();
-  }, []);
+    console.log('[App] useEffect for fetchCards, user:', user?.email);
+    if (user) {
+      console.log('[App] User exists, fetching cards...');
+      fetchCards();
+    }
+  }, [user]);
 
   const filteredCards = cards.filter((card) => {
     const query = searchQuery.toLowerCase();
@@ -41,8 +91,27 @@ function App() {
   });
 
   const handleGenerateCard = () => {
+    if (!user) return;
+    
     setLoading(true);
-    chrome.runtime.sendMessage({ type: "CREATE_CARD" }, (response) => {
+    
+    const timeout = setTimeout(() => {
+      console.error('Card creation timeout');
+      setLoading(false);
+    }, 5000);
+    
+    chrome.runtime.sendMessage({ 
+      type: "CREATE_CARD",
+      payload: { userId: user.id, groupId: user.slash_group_id }
+    }, (response) => {
+      clearTimeout(timeout);
+      
+      if (chrome.runtime.lastError) {
+        console.error('Chrome runtime error:', chrome.runtime.lastError);
+        setLoading(false);
+        return;
+      }
+      
       if (response && response.card) {
         fetchCards();
       } else {
@@ -51,10 +120,34 @@ function App() {
     });
   };
 
+  const handleLogout = async () => {
+    await signOut();
+    // Auth state change will update UI automatically
+  };
+
   const handleAutofillNext = () => {
+    if (!user) return;
+    
     setLoading(true);
-    chrome.runtime.sendMessage({ type: "AUTOFILL_NEXT" }, (response) => {
-      if (response.success) {
+    
+    const timeout = setTimeout(() => {
+      console.error('Autofill timeout');
+      setLoading(false);
+    }, 5000);
+    
+    chrome.runtime.sendMessage({ 
+      type: "AUTOFILL_NEXT",
+      payload: { userId: user.id, role: user.role, groupId: user.slash_group_id }
+    }, (response) => {
+      clearTimeout(timeout);
+      
+      if (chrome.runtime.lastError) {
+        console.error('Chrome runtime error:', chrome.runtime.lastError);
+        setLoading(false);
+        return;
+      }
+      
+      if (response && response.success) {
         fetchCards();
       } else {
         setLoading(false);
@@ -63,9 +156,33 @@ function App() {
   };
 
   const handleAutofillCard = (cardId: string) => {
+      if (!user) return;
+      
       setLoading(true);
-      chrome.runtime.sendMessage({ type: "AUTOFILL_CARD", payload: { cardId } }, (response) => {
-          if (response.success) {
+      
+      const timeout = setTimeout(() => {
+        console.error('Autofill card timeout');
+        setLoading(false);
+      }, 5000);
+      
+      chrome.runtime.sendMessage({ 
+        type: "AUTOFILL_CARD", 
+        payload: { 
+          cardId, 
+          userId: user.id, 
+          role: user.role, 
+          groupId: user.slash_group_id 
+        } 
+      }, (response) => {
+          clearTimeout(timeout);
+          
+          if (chrome.runtime.lastError) {
+            console.error('Chrome runtime error:', chrome.runtime.lastError);
+            setLoading(false);
+            return;
+          }
+          
+          if (response && response.success) {
               fetchCards();
           } else {
               setLoading(false);
@@ -73,25 +190,67 @@ function App() {
       });
   };
 
+  // Check if Supabase is configured
+  if (!isSupabaseConfigured()) {
+    return <ConfigError />;
+  }
+
+  // Show loading state while checking auth
+  if (authLoading) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-2" />
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show auth screens if not logged in
+  if (!user) {
+    if (authView === "signup") {
+      return <Signup onSwitchToLogin={() => setAuthView("login")} />;
+    }
+    return <Login onSwitchToSignup={() => setAuthView("signup")} />;
+  }
+
+  // User is authenticated - show main app
   return (
     <div className="w-full h-full flex flex-col bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b p-4 flex justify-between items-center shadow-sm">
-        <h1 className="text-xl font-bold text-indigo-600 flex items-center gap-2">
-          <CreditCard className="w-6 h-6" />
-          Slash Vault
-        </h1>
-        {MOCK_USER.role === "admin" && (
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold text-indigo-600 flex items-center gap-2">
+            <CreditCard className="w-6 h-6" />
+            Slash Vault
+          </h1>
+          {user.role === "admin" && (
+            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-medium rounded">
+              Admin
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {user.role === "admin" && (
+            <button
+              onClick={() =>
+                setActiveTab(activeTab === "vault" ? "options" : "vault")
+              }
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              title={activeTab === "vault" ? "Options" : "Back to Vault"}
+            >
+              <Settings className="w-5 h-5 text-gray-600" />
+            </button>
+          )}
           <button
-            onClick={() =>
-              setActiveTab(activeTab === "vault" ? "options" : "vault")
-            }
+            onClick={handleLogout}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-            title={activeTab === "vault" ? "Options" : "Back to Vault"}
+            title="Sign out"
           >
-            <Settings className="w-5 h-5 text-gray-600" />
+            <LogOut className="w-5 h-5 text-gray-600" />
           </button>
-        )}
+        </div>
       </header>
 
       {/* Main Content */}

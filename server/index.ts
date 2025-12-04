@@ -10,11 +10,27 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
+// --- Auth Routes ---
+
+// GET /api/auth/user - Get current user info
+app.get("/api/auth/user/:userId", async (req, res) => {
+  const { userId } = req.params;
+  
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("id", userId)
+    .single();
+
+  if (error) return res.status(404).json({ error: "User not found" });
+  res.json(data);
+});
+
 // --- Routes ---
 
-// GET /api/cards (Admin/All cards)
-app.get("/api/cards", async (_req, res) => {
-  const { activeOnly } = _req.query;
+// GET /api/cards - Get cards based on user role and group
+app.get("/api/cards", async (req, res) => {
+  const { activeOnly, userId: _userId, role, groupId } = req.query;
   const now = new Date().toISOString();
 
   let query = supabase
@@ -22,6 +38,13 @@ app.get("/api/cards", async (_req, res) => {
     .select("*")
     .order("last_used", { ascending: true, nullsFirst: true })
     .order("usage_count", { ascending: true });
+
+  // Role-based filtering
+  if (role === "user" && groupId) {
+    // Regular users can only see cards from their group
+    query = query.eq("slash_group_id", groupId);
+  }
+  // Admins see all cards (no filter needed)
 
   if (activeOnly === "true") {
     query = query
@@ -35,18 +58,28 @@ app.get("/api/cards", async (_req, res) => {
   res.json((data as Card[]) || []);
 });
 
-// GET /api/users/:id/cards
+// GET /api/users/:id/cards (deprecated - use GET /api/cards with filters instead)
 app.get("/api/users/:id/cards", async (req, res) => {
   const userId = req.params.id;
-  const { activeOnly } = req.query;
+  const { activeOnly, role, groupId } = req.query;
   const now = new Date().toISOString();
 
   let query = supabase
     .from("cards")
     .select("*")
-    .eq("created_by", userId)
     .order("last_used", { ascending: true, nullsFirst: true })
     .order("usage_count", { ascending: true });
+
+  // Role-based filtering
+  if (role === "admin") {
+    // Admin sees all cards (no filter)
+  } else if (role === "user" && groupId) {
+    // Regular users can only see cards from their group
+    query = query.eq("slash_group_id", groupId);
+  } else {
+    // Fallback: only own cards
+    query = query.eq("created_by", userId);
+  }
 
   if (activeOnly === "true") {
     query = query
@@ -62,7 +95,7 @@ app.get("/api/users/:id/cards", async (req, res) => {
 
 // POST /api/cards/create
 app.post("/api/cards/create", async (req, res) => {
-  const { userId } = req.body;
+  const { userId, groupId } = req.body;
 
   const pan = Array(16)
     .fill(0)
@@ -78,6 +111,7 @@ app.post("/api/cards/create", async (req, res) => {
     exp_month: Math.floor(Math.random() * 12) + 1,
     exp_year: new Date().getFullYear() + Math.floor(Math.random() * 5),
     created_by: userId,
+    slash_group_id: groupId || null,
     labels: ["New"],
     last_used: null,
     usage_count: 0,

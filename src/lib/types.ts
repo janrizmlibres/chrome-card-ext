@@ -2,7 +2,7 @@ export interface User {
   id: string;
   email: string;
   role: 'admin' | 'user';
-  slash_group_id: string;
+  slash_group_id: string | null;
 }
 
 export interface Card {
