@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { supabase } from "./supabase";
 import { MOCK_CARDS } from "../src/lib/mocks";
+import { Card, SelectorProfile } from "../src/lib/types";
 
 const app = express();
 const PORT = 3000;
@@ -31,7 +32,7 @@ app.get("/api/cards", async (_req, res) => {
   const { data, error } = await query;
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
+  res.json((data as Card[]) || []);
 });
 
 // GET /api/users/:id/cards
@@ -56,7 +57,7 @@ app.get("/api/users/:id/cards", async (req, res) => {
   const { data, error } = await query;
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
+  res.json((data as Card[]) || []);
 });
 
 // POST /api/cards/create
@@ -211,7 +212,7 @@ app.get("/api/selectorProfiles", async (req, res) => {
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
 
-  const profiles = (data || []).map((p: any) => ({
+  const profiles: SelectorProfile[] = (data || []).map((p: any) => ({
     id: p.id,
     domain: p.domain,
     user_id: p.user_id,
