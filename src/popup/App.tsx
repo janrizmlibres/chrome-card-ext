@@ -170,7 +170,8 @@ function App() {
                       </div>
                       <button 
                         onClick={() => handleAutofillCard(card.id)}
-                        className="text-sm text-indigo-600 font-medium hover:text-indigo-800 opacity-0 group-hover:opacity-100 transition-opacity"
+                        disabled={!!(card.excluded_until && new Date(card.excluded_until) > new Date())}
+                        className="text-sm text-indigo-600 font-medium hover:text-indigo-800 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Autofill
                       </button>

@@ -76,8 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const { cardId } = message.payload;
       fetch(`http://localhost:3000/api/cards/${cardId}/mark_used`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cooldownInterval: 30 })
+        headers: { 'Content-Type': 'application/json' }
       })
       .then(res => res.json())
       .then(data => sendResponse({ success: true }))

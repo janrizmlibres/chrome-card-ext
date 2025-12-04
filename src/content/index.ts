@@ -93,7 +93,8 @@ function fillFields(card: any) {
             
             // Fill Expiry
             // Simplified: assumes MM/YYYY or separate fields
-            const expFilled = fillInput(cardExpirySelectors, `${card.exp_month}/${card.exp_year}`);
+            const expYearShort = card.exp_year.toString().slice(-2);
+            const expFilled = fillInput(cardExpirySelectors, `${card.exp_month.toString().padStart(2, '0')}/${expYearShort}`);
             if (expFilled) filled = true;
             
             // Handle CVV

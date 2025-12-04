@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Trash2, Clock, Globe } from "lucide-react";
 import { SelectorProfile } from "../lib/types";
 
@@ -7,9 +7,13 @@ export function AdminOptions() {
   const [cooldown, setCooldown] = useState(30);
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const saveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     loadData();
+    return () => {
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
   }, []);
 
   const loadData = () => {
@@ -46,25 +50,32 @@ export function AdminOptions() {
     }
   };
 
-  const handleCooldownChange = async (val: number) => {
+  const handleCooldownChange = (val: number) => {
     setCooldown(val);
-    try {
-      const res = await fetch("http://localhost:3000/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cooldownInterval: val }),
-      });
-      
-      if (res.ok) {
-        setSaveStatus("Saved!");
-        setTimeout(() => setSaveStatus(null), 2000);
-      } else {
-        setSaveStatus("Error saving");
-      }
-    } catch (err) {
-      console.error(err);
-      setSaveStatus("Error saving");
+    
+    if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
     }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+        try {
+            const res = await fetch("http://localhost:3000/api/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ cooldownInterval: val }),
+            });
+            
+            if (res.ok) {
+                setSaveStatus("Saved!");
+                setTimeout(() => setSaveStatus(null), 2000);
+            } else {
+                setSaveStatus("Error saving");
+            }
+        } catch (err) {
+            console.error(err);
+            setSaveStatus("Error saving");
+        }
+    }, 800);
   };
 
   return (

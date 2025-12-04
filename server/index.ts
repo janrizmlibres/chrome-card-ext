@@ -88,8 +88,14 @@ app.post('/api/cards/:id/mark_used', async (req, res) => {
   const cardId = req.params.id;
   
   // Fetch global settings
-  const { data: settings } = await supabase.from('settings').select('cooldown_interval').single();
-  const cooldownInterval = settings?.cooldown_interval || 30;
+  const { data: settings, error: settingsError } = await supabase.from('settings').select('cooldown_interval').maybeSingle();
+  
+  if (settingsError) {
+      console.error('Error fetching settings:', settingsError);
+      // Fallback to 30 if DB error, but log it
+  }
+
+  const cooldownInterval = settings?.cooldown_interval ?? 30;
 
   const now = new Date();
   const cooldownDate = new Date(now.getTime() + cooldownInterval * 60000);
