@@ -30,3 +30,11 @@ export interface SelectorProfile {
   cardExpirySelectors: string[];
   cvvSelectors: string[];
 }
+
+export interface AuditLog {
+  id: string;
+  card_id: string | null;
+  action: string;
+  details: any;
+  created_at: string;
+}

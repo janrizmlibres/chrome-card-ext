@@ -134,6 +134,21 @@ app.post("/api/cards/:id/mark_used", async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+
+  // Create Audit Log
+  const { error: auditError } = await supabase.from("audit_logs").insert({
+    card_id: cardId,
+    action: "card_used",
+    details: {
+      new_usage_count: data.usage_count,
+      triggered_at: now.toISOString(),
+    },
+  });
+
+  if (auditError) {
+    console.error("Error creating audit log:", auditError);
+  }
+
   res.json(data);
 });
 
