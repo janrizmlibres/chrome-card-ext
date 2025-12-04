@@ -217,19 +217,21 @@ export async function signUp(email: string, password: string, groupId?: string) 
       throw new Error('User creation failed');
     }
 
-    console.log('[signUp] Creating user record...');
+    console.log('[signUp] User created successfully');
     
-    // Create user record in our users table
-    const { error: insertError } = await supabase
-      .from('users')
-      .insert({
-        id: data.user.id,
-        email: data.user.email,
-        role: 'user', // Default role
-        slash_group_id: groupId || null,
-      });
-
-    if (insertError) throw insertError;
+    // Note: The users table record is automatically created by a database trigger
+    // If groupId is provided, update it after signup
+    if (groupId && data.session) {
+      console.log('[signUp] Updating group ID...');
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ slash_group_id: groupId })
+        .eq('id', data.user.id);
+      
+      if (updateError) {
+        console.error('[signUp] Failed to update group ID:', updateError);
+      }
+    }
 
     const user: User = {
       id: data.user.id,
