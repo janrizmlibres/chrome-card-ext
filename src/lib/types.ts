@@ -2,7 +2,7 @@ export interface User {
   id: string;
   email: string;
   role: 'admin' | 'user';
-  slash_group_id: string | null;
+  slash_group_id: string;
 }
 
 export interface Card {
@@ -14,6 +14,7 @@ export interface Card {
   exp_month: number;
   exp_year: number;
   created_by: string; // User ID
+  slash_group_id: string;
   labels: string[];
   last_used: string | null; // ISO date string
   usage_count: number;

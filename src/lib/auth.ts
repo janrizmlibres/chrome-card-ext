@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { User } from './types';
+import { DEFAULT_GROUP_ID } from './constants';
 
 export interface AuthSession {
   user: User | null;
@@ -202,8 +203,9 @@ export async function signIn(email: string, password: string) {
 
 /**
  * Sign up with email and password
+ * Note: New users automatically get assigned to the default group
  */
-export async function signUp(email: string, password: string, groupId?: string) {
+export async function signUp(email: string, password: string) {
   try {
     console.log('[signUp] Starting sign up...');
     const { data, error } = await supabase.auth.signUp({
@@ -220,24 +222,13 @@ export async function signUp(email: string, password: string, groupId?: string) 
     console.log('[signUp] User created successfully');
     
     // Note: The users table record is automatically created by a database trigger
-    // If groupId is provided, update it after signup
-    if (groupId && data.session) {
-      console.log('[signUp] Updating group ID...');
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ slash_group_id: groupId })
-        .eq('id', data.user.id);
-      
-      if (updateError) {
-        console.error('[signUp] Failed to update group ID:', updateError);
-      }
-    }
+    // with the default group ID. No need to update it here.
 
     const user: User = {
       id: data.user.id,
       email: data.user.email || email,
       role: 'user',
-      slash_group_id: groupId || null,
+      slash_group_id: DEFAULT_GROUP_ID,
     };
 
     // If session is available, store it

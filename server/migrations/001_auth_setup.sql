@@ -52,7 +52,14 @@ create policy if not exists "Users can see own group cards"
             select 1 from users
             where users.id = auth.uid() 
             and users.role = 'user'
-            and users.slash_group_id = cards.slash_group_id
+            and (
+                -- If user has a group, show cards from that group
+                (users.slash_group_id is not null 
+                 and users.slash_group_id = cards.slash_group_id)
+                -- If user has no group, only show their own cards
+                or (users.slash_group_id is null 
+                    and cards.created_by = auth.uid())
+            )
         )
     );
 

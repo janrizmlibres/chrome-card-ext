@@ -1,6 +1,7 @@
 -- Migration: Auto-create users table records on auth signup
 -- This trigger automatically creates a record in the public.users table
 -- when a new user signs up in auth.users
+-- New users are automatically assigned to 'default-group-id'
 
 -- Function to handle new user creation
 create or replace function public.handle_new_user()
@@ -14,7 +15,7 @@ begin
     new.id,
     new.email,
     'user',
-    null
+    'default-group-id'
   );
   return new;
 end;

@@ -15,3 +15,6 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 export const AUTH_STORAGE_KEY = 'slash_vault_auth';
 export const USER_STORAGE_KEY = 'slash_vault_user';
 
+// Default Group ID for new users
+export const DEFAULT_GROUP_ID = 'default-group-id';
+

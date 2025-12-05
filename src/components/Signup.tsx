@@ -10,7 +10,6 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [groupId, setGroupId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +32,7 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
     setIsLoading(true);
 
     try {
-      const { user, error: signUpError } = await signUp(email, password, groupId || undefined);
+      const { user, error: signUpError } = await signUp(email, password);
       
       if (signUpError) {
         setError(signUpError);
@@ -120,24 +119,6 @@ export function Signup({ onSwitchToLogin }: SignupProps) {
                 placeholder="you@example.com"
                 disabled={isLoading}
               />
-            </div>
-
-            <div>
-              <label htmlFor="groupId" className="block text-sm font-medium text-gray-700 mb-1">
-                Group ID <span className="text-gray-500 font-normal">(optional)</span>
-              </label>
-              <input
-                id="groupId"
-                type="text"
-                value={groupId}
-                onChange={(e) => setGroupId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                placeholder="Your team/group ID"
-                disabled={isLoading}
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Enter your team's group ID to share cards with your team
-              </p>
             </div>
 
             <div>
