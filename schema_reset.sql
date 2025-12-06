@@ -1,0 +1,30 @@
+-- Teardown script to remove all schema objects created in schema.sql
+
+-- Drop triggers
+drop trigger if exists on_auth_user_created on auth.users;
+drop trigger if exists on_user_group_changed on public.users;
+
+-- Drop policies
+drop policy if exists "Users can read own data" on users;
+drop policy if exists "Users can insert own data" on users;
+drop policy if exists "Users can update own data" on users;
+
+drop policy if exists "Admins can see all cards" on cards;
+drop policy if exists "Users can see own group cards" on cards;
+drop policy if exists "Authenticated users can create cards" on cards;
+
+drop policy if exists "Any authenticated user can read selector profiles" on selector_profiles;
+drop policy if exists "Any authenticated user can create selector profiles" on selector_profiles;
+drop policy if exists "Any authenticated user can update selector profiles" on selector_profiles;
+drop policy if exists "Any authenticated user can delete selector profiles" on selector_profiles;
+
+-- Drop functions
+drop function if exists public.handle_new_user() cascade;
+drop function if exists public.sync_user_cards_group() cascade;
+
+-- Drop tables (dependents first)
+drop table if exists audit_logs cascade;
+drop table if exists selector_profiles cascade;
+drop table if exists cards cascade;
+drop table if exists settings cascade;
+drop table if exists users cascade;

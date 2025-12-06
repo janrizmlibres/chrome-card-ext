@@ -54,7 +54,9 @@ app.get("/api/cards", async (req, res) => {
   const { data, error } = await query;
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json((data as Card[]) || []);
+
+  const sanitized = ((data as Card[]) || []).map(({ pan: _pan, cvv: _cvv, ...rest }) => rest);
+  res.json(sanitized);
 });
 
 // POST /api/cards/create
@@ -66,10 +68,12 @@ app.post("/api/cards/create", async (req, res) => {
     .map(() => Math.floor(Math.random() * 10))
     .join("");
   const last4 = pan.slice(-4);
+  const cvv = Math.floor(100 + Math.random() * 900).toString();
 
   const newCard = {
     slash_card_id: `slash-${Date.now()}`,
     pan,
+    cvv,
     last4,
     brand: ["Visa", "MasterCard", "Amex"][Math.floor(Math.random() * 3)],
     exp_month: Math.floor(Math.random() * 12) + 1,
@@ -90,7 +94,34 @@ app.post("/api/cards/create", async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  if (!data) return res.status(500).json({ error: "No card returned after creation" });
+
+  const { pan: _pan, cvv: _cvv, ...safeCard } = data as Card & { cvv?: string };
+  res.json(safeCard);
+});
+
+// GET /api/cards/:id/full - returns sensitive fields (pan, cvv) for autofill
+app.get("/api/cards/:id/full", async (req, res) => {
+  const { id } = req.params;
+  const { role, groupId } = req.query;
+
+  if (role === "user" && !groupId) {
+    return res.status(400).json({ error: "groupId is required for user role" });
+  }
+
+  let query = supabase.from("cards").select("*").eq("id", id);
+
+  if (role === "user" && groupId) {
+    query = query.eq("slash_group_id", groupId as string);
+  }
+
+  const { data, error } = await query.single();
+
+  if (error || !data) {
+    return res.status(404).json({ error: "Card not found" });
+  }
+
+  res.json(data as Card);
 });
 
 // POST /api/cards/:id/mark_used
@@ -181,14 +212,15 @@ app.post("/api/settings", async (req, res) => {
 // --- Selector Profiles API ---
 
 app.get("/api/selectorProfiles", async (req, res) => {
-  const { domain, userId } = req.query;
+  const { domain } = req.query;
 
   let query = supabase.from("selector_profiles").select("*");
 
-  if (domain && userId) {
+  if (domain) {
     const { data, error } = await query
       .eq("domain", domain)
-      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
 
@@ -206,7 +238,7 @@ app.get("/api/selectorProfiles", async (req, res) => {
     return res.json(profile);
   }
 
-  // Admin: List all
+  // List all profiles when no domain is provided
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
 

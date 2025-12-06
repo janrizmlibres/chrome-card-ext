@@ -81,55 +81,52 @@ function getCssSelector(el: HTMLElement): string {
 }
 
 function fillFields(card: any) {
-    // 1. Get selectors for this domain
-    chrome.storage.local.get(['currentUser'], (result) => {
-        const userId = (result.currentUser as any)?.id;
+    // 1. Get selectors for this domain (shared across users)
+    chrome.runtime.sendMessage({
+        type: 'GET_SELECTORS',
+        payload: { domain: window.location.hostname }
+    }, (response) => {
+    if (response && response.profile) {
+        const { cardNumberSelectors, cardExpirySelectors, cvvSelectors } = response.profile;
         
-        chrome.runtime.sendMessage({
-            type: 'GET_SELECTORS',
-            payload: { domain: window.location.hostname, userId }
-        }, (response) => {
-        if (response && response.profile) {
-            const { cardNumberSelectors, cardExpirySelectors, cvvSelectors } = response.profile;
-            
-            let filled = false;
+        let filled = false;
 
-            // Fill Number
-            // Use PAN if available, else fall back (though type should enforce PAN)
-            const numberToFill = card.pan || card.last4;
-            const numFilled = fillInput(cardNumberSelectors, numberToFill);
-            if (numFilled) filled = true;
-            
-            // Fill Expiry
-            // Simplified: assumes MM/YYYY or separate fields
-            const expYearShort = card.exp_year.toString().slice(-2);
-            const expFilled = fillInput(cardExpirySelectors, `${card.exp_month.toString().padStart(2, '0')}/${expYearShort}`);
-            if (expFilled) filled = true;
-            
-            // Handle CVV
-            if (cvvSelectors && cvvSelectors.length > 0) {
-                const cvv = prompt(`Enter CVV for card ending in ${card.last4}:`);
-                if (cvv) {
-                    const cvvFilled = fillInput(cvvSelectors, cvv);
-                    if (cvvFilled) filled = true;
-                }
-            }
-
-            if (filled) {
-                console.log('Autofill successful, marking card as used.');
-                chrome.runtime.sendMessage({
-                    type: 'MARK_USED',
-                    payload: { cardId: card.id }
-                });
+        // Fill Number
+        // Use PAN if available, else fall back (though autofill requests should include PAN)
+        const numberToFill = card.pan ?? card.last4;
+        const numFilled = fillInput(cardNumberSelectors, numberToFill);
+        if (numFilled) filled = true;
+        
+        // Fill Expiry
+        // Simplified: assumes MM/YYYY or separate fields
+        const expYearShort = card.exp_year.toString().slice(-2);
+        const expFilled = fillInput(cardExpirySelectors, `${card.exp_month.toString().padStart(2, '0')}/${expYearShort}`);
+        if (expFilled) filled = true;
+        
+        // Handle CVV
+        if (cvvSelectors && cvvSelectors.length > 0) {
+            if (card.cvv) {
+                const cvvFilled = fillInput(cvvSelectors, card.cvv);
+                if (cvvFilled) filled = true;
             } else {
-                console.log('Autofill failed: No matching fields found for saved selectors.');
-                // Optional: Notify user
+                console.warn('No CVV available for autofill; skipping CVV fields.');
             }
-
-        } else {
-            alert('No selectors saved for this domain. Please right-click input fields to map them first.');
         }
-        });
+
+        if (filled) {
+            console.log('Autofill successful, marking card as used.');
+            chrome.runtime.sendMessage({
+                type: 'MARK_USED',
+                payload: { cardId: card.id }
+            });
+        } else {
+            console.log('Autofill failed: No matching fields found for saved selectors.');
+            // Optional: Notify user
+        }
+
+    } else {
+        alert('No selectors saved for this domain. Please right-click input fields to map them first.');
+    }
     });
 }
 

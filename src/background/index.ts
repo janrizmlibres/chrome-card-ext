@@ -49,22 +49,32 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
           sendResponse({ error: 'No active cards available' });
           return;
         }
-        
-        // 2. Send to active tab content script
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]?.id) {
-                chrome.tabs.sendMessage(tabs[0].id, {
-                    type: 'FILL_FIELDS',
-                    card: bestCard
-                });
-                
-                // Mark used is now handled by content script callback via MARK_USED message
-                
-                sendResponse({ success: true, card: bestCard });
-            } else {
-                sendResponse({ error: 'No active tab' });
-            }
-        });
+
+        // 2. Fetch sensitive fields for autofill
+        const fullParams = new URLSearchParams();
+        if (role) fullParams.append('role', role);
+        if (groupId) fullParams.append('groupId', groupId);
+
+        fetch(`http://localhost:3000/api/cards/${bestCard.id}/full?${fullParams.toString()}`)
+          .then(res => res.json())
+          .then(fullCard => {
+            // 3. Send to active tab content script
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0]?.id) {
+                    chrome.tabs.sendMessage(tabs[0].id, {
+                        type: 'FILL_FIELDS',
+                        card: fullCard
+                    });
+                    
+                    // Mark used is now handled by content script callback via MARK_USED message
+                    
+                    sendResponse({ success: true, card: fullCard });
+                } else {
+                    sendResponse({ error: 'No active tab' });
+                }
+            });
+          })
+          .catch(err => sendResponse({ error: err.message }));
       })
       .catch(err => sendResponse({ error: err.message }));
 }
@@ -180,22 +190,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === 'AUTOFILL_CARD') {
-    const { cardId, userId, role, groupId } = message.payload || {};
+    const { cardId, role, groupId } = message.payload || {};
     
     const params = new URLSearchParams();
-    if (userId) params.append('userId', userId);
     if (role) params.append('role', role);
     if (groupId) params.append('groupId', groupId);
-    
-    fetch(`http://localhost:3000/api/cards?${params.toString()}`)
+
+    fetch(`http://localhost:3000/api/cards/${cardId}/full?${params.toString()}`)
       .then(res => res.json())
-      .then(cards => {
-        const card = cards.find((c: any) => c.id === cardId);
-        if (!card) {
-          sendResponse({ error: 'Card not found' });
+      .then(card => {
+        if (!card || card.error) {
+          sendResponse({ error: card?.error || 'Card not found' });
           return;
         }
-        
+
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs[0]?.id) {
                 chrome.tabs.sendMessage(tabs[0].id, {
@@ -213,8 +221,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   
   if (message.type === 'GET_SELECTORS') {
-      const { domain, userId } = message.payload;
-      fetch(`http://localhost:3000/api/selectorProfiles?domain=${domain}&userId=${userId || 'user-123'}`)
+      const { domain } = message.payload;
+      fetch(`http://localhost:3000/api/selectorProfiles?domain=${domain}`)
         .then(res => res.json())
         .then(data => sendResponse({ profile: data }))
         .catch(err => sendResponse({ error: err.message }));
