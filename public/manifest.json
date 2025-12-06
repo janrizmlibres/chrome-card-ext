@@ -35,8 +35,8 @@
   "commands": {
     "autofill-next": {
       "suggested_key": {
-        "default": "Alt+Shift+Period",
-        "mac": "MacCtrl+Shift+Period"
+        "default": "Ctrl+Shift+F",
+        "mac": "MacCtrl+Shift+F"
       },
       "description": "Autofill Next Card"
     }
