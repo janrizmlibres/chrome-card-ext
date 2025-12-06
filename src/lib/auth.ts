@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { User } from './types';
-import { DEFAULT_GROUP_ID } from './constants';
+import { SLASH_GROUP_ID_PREFIX, SLASH_GROUP_ID_RANDOM_BYTES } from './constants';
 
 export interface AuthSession {
   user: User | null;
@@ -24,6 +24,38 @@ const authListeners: Array<(user: User | null) => void> = [];
 function notifyAuthListeners(user: User | null) {
   console.log('[notifyAuthListeners] Notifying', authListeners.length, 'listeners');
   authListeners.forEach(listener => listener(user));
+}
+
+function generateSlashGroupId(): string {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(SLASH_GROUP_ID_RANDOM_BYTES));
+  const suffix = Array.from(randomBytes)
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('');
+  return `${SLASH_GROUP_ID_PREFIX}${suffix}`;
+}
+
+async function fetchUserProfileWithRetry(userId: string, attempts = 3, delayMs = 200) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (data) {
+      return data;
+    }
+
+    if (error) {
+      console.warn(`[signUp] User fetch attempt ${attempt} failed:`, error.message || error);
+    }
+
+    if (attempt < attempts) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return null;
 }
 
 export async function getCurrentUser(): Promise<User | null> {
@@ -203,7 +235,7 @@ export async function signIn(email: string, password: string) {
 
 /**
  * Sign up with email and password
- * Note: New users automatically get assigned to the default group
+ * Note: New users receive a randomly generated slash_group_id
  */
 export async function signUp(email: string, password: string) {
   try {
@@ -221,14 +253,27 @@ export async function signUp(email: string, password: string) {
 
     console.log('[signUp] User created successfully');
     
-    // Note: The users table record is automatically created by a database trigger
-    // with the default group ID. No need to update it here.
+    const profile = await fetchUserProfileWithRetry(data.user.id);
+    const slashGroupId = generateSlashGroupId();
+
+    if (data.session) {
+      const { error: persistError } = await supabase
+        .from('users')
+        .update({ slash_group_id: slashGroupId })
+        .eq('id', data.user.id);
+
+      if (persistError) {
+        console.warn('[signUp] Failed to persist generated group ID:', persistError.message || persistError);
+      }
+    } else {
+      console.warn('[signUp] No session available to persist generated group ID');
+    }
 
     const user: User = {
       id: data.user.id,
-      email: data.user.email || email,
-      role: 'user',
-      slash_group_id: DEFAULT_GROUP_ID,
+      email: profile?.email || data.user.email || email,
+      role: profile?.role || 'user',
+      slash_group_id: slashGroupId,
     };
 
     // If session is available, store it
