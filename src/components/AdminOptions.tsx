@@ -1,13 +1,22 @@
 import { useState, useEffect, useRef } from "react";
+import { User } from "../lib/types";
 import { Trash2, Clock, Globe } from "lucide-react";
 import { SelectorProfile } from "../lib/types";
 
-export function AdminOptions() {
+interface AdminOptionsProps {
+  user: User;
+}
+
+export function AdminOptions({ user }: AdminOptionsProps) {
   const [profiles, setProfiles] = useState<SelectorProfile[]>([]);
   const [cooldown, setCooldown] = useState(30);
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const saveTimeoutRef = useRef<number | null>(null);
+  const [importText, setImportText] = useState("");
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [importCount, setImportCount] = useState<number | null>(null);
+  const [importFileName, setImportFileName] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -76,6 +85,126 @@ export function AdminOptions() {
             setSaveStatus("Error saving");
         }
     }, 800);
+  };
+
+  const normalizeHeader = (header: string) => header.trim().replace(/"/g, "").toLowerCase();
+
+  const parseAddressRows = (text: string) => {
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l);
+    if (lines.length === 0) return [];
+
+    const delimiter = lines[0].includes("\t") ? "\t" : ",";
+    const headers = lines[0].split(delimiter).map(normalizeHeader);
+
+    const idx = (names: string[]) => {
+      const set = names.map((n) => n.toLowerCase());
+      return headers.findIndex((h) => set.includes(h));
+    };
+
+    const colAddress1 = idx([
+      "address 1",
+      "address1",
+      "address line 1",
+      "address",
+      "street",
+      "street 1",
+      "street1",
+      "addr",
+      "addr1",
+    ]);
+    const colAddress2 = idx(["address 2", "address2", "address line 2", "street 2", "street2", "addr2"]);
+    const colCity = idx(["city"]);
+    const colState = idx(["state", "province", "state or province"]);
+    const colZip = idx(["zip", "postal", "postal code", "zip code"]);
+    const colPhone = idx(["phone", "primary phone number", "phone number"]);
+    const colFirst = idx(["aila", "first name", "first"]);
+    const colLast = idx(["dawson", "last name", "last"]);
+
+    const requiredCols = [colAddress1, colCity, colState, colFirst, colLast];
+    if (requiredCols.some((c) => c === -1)) return [];
+
+    const rows = lines.slice(1).map((line) => line.split(delimiter));
+
+    return rows
+      .map((cols) => {
+        const first = (cols[colFirst] || "").trim();
+        const last = (cols[colLast] || "").trim();
+        const name = [first, last].filter(Boolean).join(" ").trim();
+        return {
+          address1: (cols[colAddress1] || "").trim(),
+          address2: colAddress2 >= 0 ? (cols[colAddress2] || "").trim() : "",
+          city: (cols[colCity] || "").trim(),
+          state: (cols[colState] || "").trim(),
+          zip: colZip >= 0 ? (cols[colZip] || "").trim() : "",
+          phone: (cols[colPhone] || "").trim(),
+          name,
+        };
+      })
+      .filter((r) => r.address1 && r.city && r.state && r.name);
+  };
+
+  const handleImport = async () => {
+    setImportStatus(null);
+    setImportCount(null);
+    const parsed = parseAddressRows(importText);
+    if (parsed.length === 0) {
+      setImportStatus("No valid rows found. Check headers and data.");
+      return;
+    }
+
+    await handleImportParsed(parsed, "pasted data");
+  };
+
+  const handleImportParsed = async (parsed: any[], label: string) => {
+    setImportStatus(`Importing from ${label}...`);
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+
+      const res = await fetch("http://localhost:3000/api/addresses/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses: parsed, userId: user.id }),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeout));
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (_e) {
+        // ignore JSON parse errors (e.g., empty body), surface below
+      }
+
+      if (!res.ok) {
+        setImportStatus(data?.error || "Import failed");
+        return;
+      }
+
+      setImportCount(data?.accepted ?? parsed.length);
+      setImportStatus(data?.message || "Accepted for background import");
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        setImportStatus("Import request timed out.");
+      } else {
+        console.error(err);
+        setImportStatus(err.message || "Import failed");
+      }
+    }
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportFileName(file.name);
+    const text = await file.text();
+    setImportText(text);
+    const parsed = parseAddressRows(text);
+    if (parsed.length === 0) {
+      setImportStatus("No valid rows found. Check headers and data.");
+      return;
+    }
+    await handleImportParsed(parsed, `file: ${file.name}`);
   };
 
   return (
@@ -160,6 +289,50 @@ export function AdminOptions() {
               ))}
             </div>
           )}
+        </section>
+
+        {/* Address Import */}
+        <section className="bg-white p-4 rounded-xl border shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-800">Bulk Import Addresses (CSV/TSV)</h3>
+            {importStatus && (
+              <span className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 font-medium">
+                {importStatus}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-500">
+            Expected headers: Address 1, Address 2, City, State, Zip, Phone, Aila (First Name), Dawson (Last Name)
+          </p>
+          <div className="flex items-center gap-3 text-sm">
+            <label className="cursor-pointer px-3 py-1.5 bg-white border rounded-lg hover:bg-gray-50 transition-colors">
+              <input
+                type="file"
+                accept=".csv,.tsv,.txt"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              Upload CSV/TSV
+            </label>
+            <span className="text-xs text-gray-500 truncate">
+              {importFileName || "No file selected"}
+            </span>
+          </div>
+          <textarea
+            className="w-full h-32 border rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            placeholder="Paste CSV or tab-separated data here..."
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+          />
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>{importCount !== null ? `Imported: ${importCount}` : ""}</span>
+            <button
+              onClick={handleImport}
+              className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              Import Addresses
+            </button>
+          </div>
         </section>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Search, Plus, CreditCard, Settings, RefreshCw, LogOut } from "lucide-react";
-import { Card } from "../lib/types";
+import { Card, User } from "../lib/types";
 import { AdminOptions } from "../components/AdminOptions";
 import { Login } from "../components/Login";
 import { Signup } from "../components/Signup";
@@ -345,7 +345,7 @@ function App() {
             </div>
           </>
         ) : (
-            <AdminOptions />
+            <AdminOptions user={user as User} />
         )}
       </main>
     </div>

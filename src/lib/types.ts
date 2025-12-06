@@ -31,6 +31,13 @@ export interface SelectorProfile {
   cardNumberSelectors: string[];
   cardExpirySelectors: string[];
   cvvSelectors: string[];
+  address1Selectors: string[];
+  address2Selectors: string[];
+  citySelectors: string[];
+  stateSelectors: string[];
+  zipSelectors: string[];
+  phoneSelectors: string[];
+  nameSelectors: string[];
 }
 
 export interface AuditLog {
@@ -38,5 +45,17 @@ export interface AuditLog {
   card_id: string | null;
   action: string;
   details: any;
+  created_at: string;
+}
+
+export interface Address {
+  id: string;
+  address1: string;
+  address2: string | null;
+  city: string;
+  state: string;
+  zip: string | null;
+  phone: string;
+  name: string;
   created_at: string;
 }

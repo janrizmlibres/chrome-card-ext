@@ -23,6 +23,43 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Set as CVV Field',
     contexts: ['editable'],
   });
+
+  // Address fields
+  chrome.contextMenus.create({
+    id: 'slash-set-address1',
+    title: 'Set as Address Line 1',
+    contexts: ['editable'],
+  });
+  chrome.contextMenus.create({
+    id: 'slash-set-address2',
+    title: 'Set as Address Line 2',
+    contexts: ['editable'],
+  });
+  chrome.contextMenus.create({
+    id: 'slash-set-city',
+    title: 'Set as City Field',
+    contexts: ['editable'],
+  });
+  chrome.contextMenus.create({
+    id: 'slash-set-state',
+    title: 'Set as State/Province Field',
+    contexts: ['editable'],
+  });
+  chrome.contextMenus.create({
+    id: 'slash-set-zip',
+    title: 'Set as ZIP/Postal Field',
+    contexts: ['editable'],
+  });
+  chrome.contextMenus.create({
+    id: 'slash-set-phone',
+    title: 'Set as Phone Field',
+    contexts: ['editable'],
+  });
+  chrome.contextMenus.create({
+    id: 'slash-set-name',
+    title: 'Set as Name Field',
+    contexts: ['editable'],
+  });
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {

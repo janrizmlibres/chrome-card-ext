@@ -29,6 +29,13 @@ function handleFieldMapping(element: HTMLElement, type: string) {
   if (type === 'slash-set-number') fieldType = 'cardNumber';
   else if (type === 'slash-set-expiry') fieldType = 'cardExpiry';
   else if (type === 'slash-set-cvv') fieldType = 'cardCvv';
+  else if (type === 'slash-set-address1') fieldType = 'address1';
+  else if (type === 'slash-set-address2') fieldType = 'address2';
+  else if (type === 'slash-set-city') fieldType = 'city';
+  else if (type === 'slash-set-state') fieldType = 'state';
+  else if (type === 'slash-set-zip') fieldType = 'zip';
+  else if (type === 'slash-set-phone') fieldType = 'phone';
+  else if (type === 'slash-set-name') fieldType = 'name';
 
   if (fieldType) {
       // Get current user from storage

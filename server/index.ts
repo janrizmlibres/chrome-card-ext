@@ -7,7 +7,8 @@ const app = express();
 const PORT = 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // --- Auth Routes ---
 
@@ -234,6 +235,13 @@ app.get("/api/selectorProfiles", async (req, res) => {
       cardNumberSelectors: data.cardnumberselectors || [],
       cardExpirySelectors: data.cardexpiryselectors || [],
       cvvSelectors: data.cvvselectors || [],
+      address1Selectors: data.address1selectors || [],
+      address2Selectors: data.address2selectors || [],
+      citySelectors: data.cityselectors || [],
+      stateSelectors: data.stateselectors || [],
+      zipSelectors: data.zipselectors || [],
+      phoneSelectors: data.phoneselectors || [],
+      nameSelectors: data.nameselectors || [],
     };
     return res.json(profile);
   }
@@ -249,6 +257,13 @@ app.get("/api/selectorProfiles", async (req, res) => {
     cardNumberSelectors: p.cardnumberselectors || [],
     cardExpirySelectors: p.cardexpiryselectors || [],
     cvvSelectors: p.cvvselectors || [],
+    address1Selectors: p.address1selectors || [],
+    address2Selectors: p.address2selectors || [],
+    citySelectors: p.cityselectors || [],
+    stateSelectors: p.stateselectors || [],
+    zipSelectors: p.zipselectors || [],
+    phoneSelectors: p.phoneselectors || [],
+    nameSelectors: p.nameselectors || [],
   }));
   res.json(profiles);
 });
@@ -276,7 +291,6 @@ app.post("/api/selectorProfiles", async (req, res) => {
       .from("selector_profiles")
       .select("*")
       .eq("domain", domain)
-      .eq("user_id", userId)
       .maybeSingle();
 
     if (findError) {
@@ -293,6 +307,13 @@ app.post("/api/selectorProfiles", async (req, res) => {
         cardnumberselectors: [],
         cardexpiryselectors: [],
         cvvselectors: [],
+        address1selectors: [],
+        address2selectors: [],
+        cityselectors: [],
+        stateselectors: [],
+        zipselectors: [],
+        phoneselectors: [],
+        nameselectors: [],
       };
 
       const { data: newProfile, error: createError } = await supabase
@@ -314,6 +335,13 @@ app.post("/api/selectorProfiles", async (req, res) => {
     const currentCardNumber = profile.cardnumberselectors || [];
     const currentCardExpiry = profile.cardexpiryselectors || [];
     const currentCvv = profile.cvvselectors || [];
+    const currentAddress1 = profile.address1selectors || [];
+    const currentAddress2 = profile.address2selectors || [];
+    const currentCity = profile.cityselectors || [];
+    const currentState = profile.stateselectors || [];
+    const currentZip = profile.zipselectors || [];
+    const currentPhone = profile.phoneselectors || [];
+    const currentName = profile.nameselectors || [];
 
     if (fieldType === "cardNumber") {
       updates.cardnumberselectors = [
@@ -325,6 +353,20 @@ app.post("/api/selectorProfiles", async (req, res) => {
       ];
     } else if (fieldType === "cardCvv") {
       updates.cvvselectors = [...new Set([...currentCvv, selector])];
+    } else if (fieldType === "address1") {
+      updates.address1selectors = [...new Set([...currentAddress1, selector])];
+    } else if (fieldType === "address2") {
+      updates.address2selectors = [...new Set([...currentAddress2, selector])];
+    } else if (fieldType === "city") {
+      updates.cityselectors = [...new Set([...currentCity, selector])];
+    } else if (fieldType === "state") {
+      updates.stateselectors = [...new Set([...currentState, selector])];
+    } else if (fieldType === "zip") {
+      updates.zipselectors = [...new Set([...currentZip, selector])];
+    } else if (fieldType === "phone") {
+      updates.phoneselectors = [...new Set([...currentPhone, selector])];
+    } else if (fieldType === "name") {
+      updates.nameselectors = [...new Set([...currentName, selector])];
     }
 
     console.log("[API] Updating profile ID:", profile.id, "Updates:", updates);
@@ -349,6 +391,13 @@ app.post("/api/selectorProfiles", async (req, res) => {
       cardNumberSelectors: updated.cardnumberselectors || [],
       cardExpirySelectors: updated.cardexpiryselectors || [],
       cvvSelectors: updated.cvvselectors || [],
+      address1Selectors: updated.address1selectors || [],
+      address2Selectors: updated.address2selectors || [],
+      citySelectors: updated.cityselectors || [],
+      stateSelectors: updated.stateselectors || [],
+      zipSelectors: updated.zipselectors || [],
+      phoneSelectors: updated.phoneselectors || [],
+      nameSelectors: updated.nameselectors || [],
     };
 
     console.log("[API] Profile updated successfully.");
@@ -357,6 +406,72 @@ app.post("/api/selectorProfiles", async (req, res) => {
     console.error("[API] Unexpected error:", e);
     res.status(500).json({ error: e.message });
   }
+});
+
+// --- Addresses API ---
+
+// GET /api/addresses - list all addresses (shared)
+app.get("/api/addresses", async (_req, res) => {
+  const { data, error } = await supabase
+    .from("addresses")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// POST /api/addresses/import - bulk insert addresses
+app.post("/api/addresses/import", async (req, res) => {
+  const { addresses, userId } = req.body || {};
+
+  if (!Array.isArray(addresses) || addresses.length === 0) {
+    return res.status(400).json({ error: "addresses array is required" });
+  }
+
+  // Basic validation
+  const sanitized = addresses
+    .map((a: any) => ({
+      address1: (a.address1 || "").trim(),
+      address2: (a.address2 || "").trim() || null,
+      city: (a.city || "").trim(),
+      state: (a.state || "").trim(),
+      zip: (a.zip || "").trim() || null,
+      phone: (a.phone || "").trim() || null,
+      name: (a.name || "").trim(),
+      created_by: userId || null,
+    }))
+    .filter(
+      (a: any) =>
+        a.address1 &&
+        a.city &&
+        a.state &&
+        a.name
+    );
+
+  if (sanitized.length === 0) {
+    return res.status(400).json({ error: "no valid addresses to import" });
+  }
+
+  // Respond immediately; process in background
+  res.status(202).json({
+    accepted: sanitized.length,
+    message: "Accepted for background import",
+  });
+
+  const chunkSize = 500;
+  (async () => {
+    for (let i = 0; i < sanitized.length; i += chunkSize) {
+      const chunk = sanitized.slice(i, i + chunkSize);
+      const { error } = await supabase.from("addresses").insert(chunk);
+      if (error) {
+        console.error("[addresses/import] chunk insert error:", error);
+        // Continue with remaining chunks to avoid partial blocking
+      }
+    }
+  })().catch((err) => {
+    console.error("[addresses/import] unexpected error:", err);
+  });
 });
 
 app.listen(PORT, () => {
