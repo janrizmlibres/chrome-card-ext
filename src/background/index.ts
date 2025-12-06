@@ -1,3 +1,5 @@
+import { User } from '../lib/types';
+
 // Background script
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -28,6 +30,60 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     chrome.tabs.sendMessage(tab.id, {
       type: 'CONTEXT_MENU_CLICK',
       menuId: info.menuItemId,
+    });
+  }
+});
+
+function performAutofillNext(userId: string | undefined, role: string | undefined, groupId: string | undefined, sendResponse: (response: any) => void) {
+    const params = new URLSearchParams({ activeOnly: 'true' });
+    if (userId) params.append('userId', userId);
+    if (role) params.append('role', role);
+    if (groupId) params.append('groupId', groupId);
+    
+    // 1. Get best card (active only)
+    fetch(`http://localhost:3000/api/cards?${params.toString()}`)
+      .then(res => res.json())
+      .then(cards => {
+        const bestCard = cards[0]; // Already sorted by backend
+        if (!bestCard) {
+          sendResponse({ error: 'No active cards available' });
+          return;
+        }
+        
+        // 2. Send to active tab content script
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.id) {
+                chrome.tabs.sendMessage(tabs[0].id, {
+                    type: 'FILL_FIELDS',
+                    card: bestCard
+                });
+                
+                // Mark used is now handled by content script callback via MARK_USED message
+                
+                sendResponse({ success: true, card: bestCard });
+            } else {
+                sendResponse({ error: 'No active tab' });
+            }
+        });
+      })
+      .catch(err => sendResponse({ error: err.message }));
+}
+
+// Listen for keyboard commands
+chrome.commands.onCommand.addListener((command) => {
+  console.log('[Background] Command received:', command);
+  if (command === 'autofill-next') {
+    // Get current user from storage
+    chrome.storage.local.get(['currentUser'], (result) => {
+      const user = result.currentUser as User | undefined;
+      if (user) {
+        console.log('[Background] Executing autofill-next for user:', user.email);
+        performAutofillNext(user.id, user.role, user.slash_group_id, (response) => {
+          console.log('[Background] Autofill next response:', response);
+        });
+      } else {
+        console.warn('[Background] Cannot autofill: No user logged in');
+      }
     });
   }
 });
@@ -119,40 +175,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === 'AUTOFILL_NEXT') {
     const { userId, role, groupId } = message.payload || {};
-    
-    const params = new URLSearchParams({ activeOnly: 'true' });
-    if (userId) params.append('userId', userId);
-    if (role) params.append('role', role);
-    if (groupId) params.append('groupId', groupId);
-    
-    // 1. Get best card (active only)
-    fetch(`http://localhost:3000/api/cards?${params.toString()}`)
-      .then(res => res.json())
-      .then(cards => {
-        const bestCard = cards[0]; // Already sorted by backend
-        if (!bestCard) {
-          sendResponse({ error: 'No active cards available' });
-          return;
-        }
-        
-        // 2. Send to active tab content script
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]?.id) {
-                chrome.tabs.sendMessage(tabs[0].id, {
-                    type: 'FILL_FIELDS',
-                    card: bestCard
-                });
-                
-                // Mark used is now handled by content script callback via MARK_USED message
-                
-                sendResponse({ success: true, card: bestCard });
-            } else {
-                sendResponse({ error: 'No active tab' });
-            }
-        });
-      })
-      .catch(err => sendResponse({ error: err.message }));
-      return true;
+    performAutofillNext(userId, role, groupId, sendResponse);
+    return true;
   }
 
   if (message.type === 'AUTOFILL_CARD') {

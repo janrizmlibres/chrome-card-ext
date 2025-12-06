@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import { supabase } from "./supabase";
-import { MOCK_CARDS } from "../src/lib/mocks";
 import { Card, SelectorProfile } from "../src/lib/types";
 
 const app = express();
@@ -45,41 +44,6 @@ app.get("/api/cards", async (req, res) => {
     query = query.eq("slash_group_id", groupId);
   }
   // Admins see all cards (no filter needed)
-
-  if (activeOnly === "true") {
-    query = query
-      .eq("active", true)
-      .or(`excluded_until.is.null,excluded_until.lt.${now}`);
-  }
-
-  const { data, error } = await query;
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json((data as Card[]) || []);
-});
-
-// GET /api/users/:id/cards (deprecated - use GET /api/cards with filters instead)
-app.get("/api/users/:id/cards", async (req, res) => {
-  const userId = req.params.id;
-  const { activeOnly, role, groupId } = req.query;
-  const now = new Date().toISOString();
-
-  let query = supabase
-    .from("cards")
-    .select("*")
-    .order("last_used", { ascending: true, nullsFirst: true })
-    .order("usage_count", { ascending: true });
-
-  // Role-based filtering
-  if (role === "admin") {
-    // Admin sees all cards (no filter)
-  } else if (role === "user" && groupId) {
-    // Regular users can only see cards from their group
-    query = query.eq("slash_group_id", groupId);
-  } else {
-    // Fallback: only own cards
-    query = query.eq("created_by", userId);
-  }
 
   if (activeOnly === "true") {
     query = query
@@ -361,91 +325,6 @@ app.post("/api/selectorProfiles", async (req, res) => {
     console.error("[API] Unexpected error:", e);
     res.status(500).json({ error: e.message });
   }
-});
-
-app.get("/api/debug/reset", async (_req, res) => {
-  console.log("Resetting database (GET)...");
-  // Copy-paste logic or extract function
-  // 1. Delete all cards
-  const { error: deleteError } = await supabase
-    .from("cards")
-    .delete()
-    .neq("last4", "0000");
-  if (deleteError) {
-    console.error("Delete error:", deleteError);
-    return res.status(500).json({ error: deleteError.message });
-  }
-
-  // 2. Seed initial cards
-  const cardsToInsert = MOCK_CARDS.map((card) => ({
-    slash_card_id: card.slash_card_id,
-    pan: card.pan,
-    last4: card.last4,
-    brand: card.brand,
-    exp_month: card.exp_month,
-    exp_year: card.exp_year,
-    created_by: card.created_by,
-    labels: card.labels,
-    last_used: card.last_used,
-    usage_count: card.usage_count,
-    excluded_until: card.excluded_until,
-    active: card.active,
-    created_at: card.created_at,
-  }));
-
-  const { data, error: insertError } = await supabase
-    .from("cards")
-    .insert(cardsToInsert)
-    .select();
-  if (insertError) {
-    console.error("Insert error:", insertError);
-    return res.status(500).json({ error: insertError.message });
-  }
-
-  console.log(`Reset complete. Seeded ${data.length} cards.`);
-  res.json({ success: true, count: data.length });
-});
-
-app.post("/api/debug/reset", async (_req, res) => {
-  console.log("Resetting database...");
-  // 1. Delete all cards
-  const { error: deleteError } = await supabase
-    .from("cards")
-    .delete()
-    .neq("last4", "0000");
-  if (deleteError) {
-    console.error("Delete error:", deleteError);
-    return res.status(500).json({ error: deleteError.message });
-  }
-
-  // 2. Seed initial cards
-  const cardsToInsert = MOCK_CARDS.map((card) => ({
-    slash_card_id: card.slash_card_id,
-    pan: card.pan,
-    last4: card.last4,
-    brand: card.brand,
-    exp_month: card.exp_month,
-    exp_year: card.exp_year,
-    created_by: card.created_by,
-    labels: card.labels,
-    last_used: card.last_used,
-    usage_count: card.usage_count,
-    excluded_until: card.excluded_until,
-    active: card.active,
-    created_at: card.created_at,
-  }));
-
-  const { data, error: insertError } = await supabase
-    .from("cards")
-    .insert(cardsToInsert)
-    .select();
-  if (insertError) {
-    console.error("Insert error:", insertError);
-    return res.status(500).json({ error: insertError.message });
-  }
-
-  console.log(`Reset complete. Seeded ${data.length} cards.`);
-  res.json({ success: true, count: data.length });
 });
 
 app.listen(PORT, () => {

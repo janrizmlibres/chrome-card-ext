@@ -31,5 +31,14 @@
       "resources": ["assets/*"],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "commands": {
+    "autofill-next": {
+      "suggested_key": {
+        "default": "Alt+Shift+Period",
+        "mac": "MacCtrl+Shift+Period"
+      },
+      "description": "Autofill Next Card"
+    }
+  }
 }
