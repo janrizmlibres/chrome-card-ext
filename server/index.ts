@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { supabase } from "./supabase";
-import { Card, SelectorProfile } from "../src/lib/types";
+import { Card, SelectorProfile, Address } from "../src/lib/types";
 
 const app = express();
 const PORT = 3000;
@@ -125,62 +125,94 @@ app.get("/api/cards/:id/full", async (req, res) => {
   res.json(data as Card);
 });
 
-// POST /api/cards/:id/mark_used
-app.post("/api/cards/:id/mark_used", async (req, res) => {
-  const cardId = req.params.id;
+// POST /api/autofill/mark_used - unified usage tracking for cards and addresses
+app.post("/api/autofill/mark_used", async (req, res) => {
+  const { cardId, addressId, context } = req.body || {};
 
-  // Fetch global settings
-  const { data: settings, error: settingsError } = await supabase
-    .from("settings")
-    .select("cooldown_interval")
-    .maybeSingle();
+  try {
+    // Fetch global settings (cooldown interval in minutes)
+    const { data: settings } = await supabase
+      .from("settings")
+      .select("cooldown_interval")
+      .maybeSingle();
 
-  if (settingsError) {
-    console.error("Error fetching settings:", settingsError);
-    // Fallback to 30 if DB error, but log it
+    const cooldownInterval = settings?.cooldown_interval ?? 30;
+    const now = new Date();
+    const cooldownDate = new Date(now.getTime() + cooldownInterval * 60000).toISOString();
+    const nowIso = now.toISOString();
+
+    let updatedCard: Card | null = null;
+    let updatedAddress: Address | null = null;
+
+    if (cardId) {
+      const { data: card } = await supabase
+        .from("cards")
+        .select("usage_count")
+        .eq("id", cardId)
+        .maybeSingle();
+      const currentCount = card?.usage_count || 0;
+
+      const { data, error } = await supabase
+        .from("cards")
+        .update({
+          last_used: nowIso,
+          usage_count: currentCount + 1,
+          excluded_until: cooldownDate,
+        })
+        .eq("id", cardId)
+        .select()
+        .maybeSingle();
+
+      if (error) return res.status(500).json({ error: error.message });
+      updatedCard = data as Card | null;
+    }
+
+    if (addressId) {
+      const { data: addressRow } = await supabase
+        .from("addresses")
+        .select("usage_count")
+        .eq("id", addressId)
+        .maybeSingle();
+      const currentAddressCount = addressRow?.usage_count || 0;
+
+      const { data, error } = await supabase
+        .from("addresses")
+        .update({
+          last_used: nowIso,
+          usage_count: currentAddressCount + 1,
+          excluded_until: cooldownDate,
+        })
+        .eq("id", addressId)
+        .select()
+        .maybeSingle();
+
+      if (error) return res.status(500).json({ error: error.message });
+      updatedAddress = data as Address | null;
+    }
+
+    // Record audit log with both card and address references when provided
+    const { error: auditError } = await supabase.from("audit_logs").insert({
+      card_id: cardId || null,
+      address_id: addressId || null,
+      action: "autofill",
+      details: {
+        card_filled: !!cardId,
+        address_filled: !!addressId,
+        context: context || null,
+        cooldown_interval_minutes: cooldownInterval,
+        triggered_at: nowIso,
+      },
+    });
+
+    if (auditError) {
+      console.error("Error creating audit log:", auditError);
+    }
+
+    res.json({ card: updatedCard, address: updatedAddress });
+  } catch (e: any) {
+    console.error("[/api/autofill/mark_used] Unexpected error:", e);
+    res.status(500).json({ error: e?.message || "Unexpected error" });
   }
-
-  const cooldownInterval = settings?.cooldown_interval ?? 30;
-
-  const now = new Date();
-  const cooldownDate = new Date(now.getTime() + cooldownInterval * 60000);
-
-  // Get current usage count
-  const { data: card } = await supabase
-    .from("cards")
-    .select("usage_count")
-    .eq("id", cardId)
-    .single();
-  const currentCount = card?.usage_count || 0;
-
-  const { data, error } = await supabase
-    .from("cards")
-    .update({
-      last_used: now.toISOString(),
-      usage_count: currentCount + 1,
-      excluded_until: cooldownDate.toISOString(),
-    })
-    .eq("id", cardId)
-    .select()
-    .single();
-
-  if (error) return res.status(500).json({ error: error.message });
-
-  // Create Audit Log
-  const { error: auditError } = await supabase.from("audit_logs").insert({
-    card_id: cardId,
-    action: "card_used",
-    details: {
-      new_usage_count: data.usage_count,
-      triggered_at: now.toISOString(),
-    },
-  });
-
-  if (auditError) {
-    console.error("Error creating audit log:", auditError);
-  }
-
-  res.json(data);
 });
 
 // --- Settings API ---
@@ -411,14 +443,41 @@ app.post("/api/selectorProfiles", async (req, res) => {
 // --- Addresses API ---
 
 // GET /api/addresses - list all addresses (shared)
-app.get("/api/addresses", async (_req, res) => {
+app.get("/api/addresses", async (req, res) => {
+  const { activeOnly } = req.query;
+  const now = new Date().toISOString();
+
+  let query = supabase
+    .from("addresses")
+    .select("*")
+    .order("last_used", { ascending: true, nullsFirst: true })
+    .order("usage_count", { ascending: true });
+
+  if (activeOnly === "true") {
+    query = query.or(`excluded_until.is.null,excluded_until.lt.${now}`);
+  }
+
+  const { data, error } = await query;
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data as Address[]);
+});
+
+// GET /api/addresses/:id - fetch a single address by ID
+app.get("/api/addresses/:id", async (req, res) => {
+  const { id } = req.params;
+
   const { data, error } = await supabase
     .from("addresses")
     .select("*")
-    .order("created_at", { ascending: false });
+    .eq("id", id)
+    .maybeSingle();
 
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  if (error || !data) {
+    return res.status(404).json({ error: "Address not found" });
+  }
+
+  res.json(data as Address);
 });
 
 // POST /api/addresses/import - bulk insert addresses

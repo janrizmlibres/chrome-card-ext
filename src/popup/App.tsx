@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Search, Plus, CreditCard, Settings, RefreshCw, LogOut } from "lucide-react";
-import { Card, User } from "../lib/types";
+import { Card, User, Address } from "../lib/types";
 import { AdminOptions } from "../components/AdminOptions";
 import { Login } from "../components/Login";
 import { Signup } from "../components/Signup";
@@ -18,6 +18,7 @@ function App() {
   const [authView, setAuthView] = useState<AuthView>("login");
   const [activeTab, setActiveTab] = useState<"vault" | "options">("vault");
   const [cards, setCards] = useState<Card[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -66,11 +67,46 @@ function App() {
     }
   };
 
+  const fetchAddresses = () => {
+    if (!user) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      console.error('[fetchAddresses] TIMEOUT - background script not responding after 5 seconds');
+    }, 5000);
+
+    chrome.runtime.sendMessage(
+      {
+        type: "GET_ADDRESSES",
+        payload: { activeOnly: true },
+      },
+      (response) => {
+        clearTimeout(timeout);
+
+        if (chrome.runtime.lastError) {
+          console.error('Chrome runtime error:', chrome.runtime.lastError);
+          return;
+        }
+
+        if (response && Array.isArray(response.addresses)) {
+          setAddresses(response.addresses);
+        } else if (response && response.error) {
+          console.error('Error fetching addresses:', response.error);
+        } else {
+          // Fallback to empty to avoid non-array state
+          setAddresses([]);
+        }
+      }
+    );
+  };
+
   useEffect(() => {
     console.log('[App] useEffect for fetchCards, user:', user?.email);
     if (user) {
       console.log('[App] User exists, fetching cards...');
       fetchCards();
+      fetchAddresses();
     }
   }, [user]);
 
@@ -89,6 +125,13 @@ function App() {
       if (card.excluded_until && new Date(card.excluded_until) > new Date()) return false;
       return true;
   });
+
+  const activeAddresses = addresses.filter(address => {
+      if (address.excluded_until && new Date(address.excluded_until) > new Date()) return false;
+      return true;
+  });
+
+  const hasAutofillCandidates = activeCards.length > 0 || activeAddresses.length > 0;
 
   const handleGenerateCard = () => {
     if (!user) return;
@@ -155,7 +198,7 @@ function App() {
     });
   };
 
-  const handleAutofillCard = (cardId: string) => {
+  const handleAutofillCard = (cardId: string, address?: Address | null) => {
       if (!user) return;
       
       setLoading(true);
@@ -171,7 +214,8 @@ function App() {
           cardId, 
           userId: user.id, 
           role: user.role, 
-          groupId: user.slash_group_id 
+          groupId: user.slash_group_id,
+          addressId: address?.id ?? null,
         } 
       }, (response) => {
           clearTimeout(timeout);
@@ -283,11 +327,11 @@ function App() {
               </button>
               <button
                 onClick={handleAutofillNext}
-                disabled={loading || activeCards.length === 0}
+                disabled={loading || !hasAutofillCandidates}
                 className="w-full bg-white border border-indigo-600 text-indigo-600 hover:bg-indigo-50 py-2 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <CreditCard className="w-4 h-4" />
-                {activeCards.length === 0 ? "No Active Cards" : "Autofill Next Card (Ctrl+Shift+F)"}
+                {hasAutofillCandidates ? "Autofill Next (Ctrl+Shift+F)" : "No Active Cards / Addresses"}
               </button>
             </div>
 
@@ -298,7 +342,12 @@ function App() {
                   Loading cards...
                 </div>
               ) : filteredCards.length > 0 ? (
-                filteredCards.map((card) => (
+                filteredCards.map((card, idx) => {
+                  const pairedAddress =
+                    activeAddresses.length > 0
+                      ? activeAddresses[idx % activeAddresses.length]
+                      : null;
+                  return (
                   <div
                     key={card.id}
                     className="bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-shadow group"
@@ -326,9 +375,16 @@ function App() {
                         </div>
                         <div>Used: {card.usage_count} times</div>
                         <div className="text-gray-400">Created by: {card.created_by}</div>
+                        {pairedAddress ? (
+                          <div className="text-gray-600">
+                            Address: {pairedAddress.name} — {pairedAddress.city}, {pairedAddress.state} ({pairedAddress.usage_count} uses)
+                          </div>
+                        ) : (
+                          <div className="text-gray-400">No address available</div>
+                        )}
                       </div>
                       <button 
-                        onClick={() => handleAutofillCard(card.id)}
+                        onClick={() => handleAutofillCard(card.id, pairedAddress)}
                         disabled={!!(card.excluded_until && new Date(card.excluded_until) > new Date())}
                         className="text-sm text-indigo-600 font-medium hover:text-indigo-800 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -336,7 +392,8 @@ function App() {
                       </button>
                     </div>
                   </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   No cards found.

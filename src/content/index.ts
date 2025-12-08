@@ -18,7 +18,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   
   if (message.type === 'FILL_FIELDS') {
-      fillFields(message.card);
+      fillCombined({
+          card: message.card,
+          address: null,
+          contextSelector: null,
+          sendResponse,
+      });
+      return true;
   }
 
   if (message.type === 'SCAN_FOR_CARD_NUMBERS') {
@@ -27,7 +33,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === 'FILL_FOR_CONTEXT') {
-      fillForContext(message.card, message.contextSelector, sendResponse);
+      fillCombined({
+          card: message.card,
+          address: null,
+          contextSelector: message.contextSelector,
+          sendResponse,
+      });
+      return true; // async response
+  }
+
+  if (message.type === 'FILL_COMBINED') {
+      fillCombined({
+          card: message.card,
+          address: message.address,
+          contextSelector: message.contextSelector,
+          sendResponse,
+      });
       return true; // async response
   }
 });
@@ -98,56 +119,14 @@ function getCssSelector(el: HTMLElement): string {
 }
 
 function fillFields(card: any) {
-    // 1. Get selectors for this domain (shared across users)
-    chrome.runtime.sendMessage({
-        type: 'GET_SELECTORS',
-        payload: { domain: window.location.hostname }
-    }, (response) => {
-    if (response && response.profile) {
-        const { cardNumberSelectors, cardExpirySelectors, cvvSelectors } = response.profile;
-        
-        let filled = false;
-
-        // Fill Number
-        // Use PAN if available, else fall back (though autofill requests should include PAN)
-        const numberToFill = card.pan ?? card.last4;
-        const numFilled = fillInput(cardNumberSelectors, numberToFill);
-        if (numFilled) filled = true;
-        
-        // Fill Expiry
-        // Simplified: assumes MM/YYYY or separate fields
-        const expYearShort = card.exp_year.toString().slice(-2);
-        const expFilled = fillInput(cardExpirySelectors, `${card.exp_month.toString().padStart(2, '0')}/${expYearShort}`);
-        if (expFilled) filled = true;
-        
-        // Handle CVV
-        if (cvvSelectors && cvvSelectors.length > 0) {
-            if (card.cvv) {
-                const cvvFilled = fillInput(cvvSelectors, card.cvv);
-                if (cvvFilled) filled = true;
-            } else {
-                console.warn('No CVV available for autofill; skipping CVV fields.');
-            }
-        }
-
-        if (filled) {
-            console.log('Autofill successful, marking card as used.');
-            chrome.runtime.sendMessage({
-                type: 'MARK_USED',
-                payload: { cardId: card.id }
-            });
-        } else {
-            console.log('Autofill failed: No matching fields found for saved selectors.');
-            // Optional: Notify user
-        }
-
-    } else {
-        alert('No selectors saved for this domain. Please right-click input fields to map them first.');
-    }
+    fillCombined({
+        card,
+        address: null,
+        contextSelector: null,
     });
 }
 
-function fillInput(selectors: string[], value: string): boolean {
+function fillInput(selectors: string[] | undefined, value: string): boolean {
     if (!selectors) return false;
     let filledAny = false;
     for (const sel of selectors) {
@@ -162,6 +141,148 @@ function fillInput(selectors: string[], value: string): boolean {
         });
     }
     return filledAny;
+}
+
+function fillNearestWithContext(contextEl: HTMLElement, selectors: string[] | undefined, value: string): boolean {
+    if (!selectors) return false;
+    const candidates = collectElements(selectors);
+    const input = pickNearestInput(contextEl, candidates);
+    if (input) {
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+    return false;
+}
+
+type FillCombinedParams = {
+    card?: any;
+    address?: any;
+    contextSelector?: string | null;
+    sendResponse?: (resp: any) => void;
+};
+
+function fillCardFields(profile: any, card: any, fillStrategy: (selectors: string[] | undefined, value: string) => boolean): boolean {
+    if (!card) return false;
+    let filled = false;
+
+    const numberToFill = card.pan ?? card.last4;
+    if (numberToFill) {
+        filled = fillStrategy(profile.cardNumberSelectors, numberToFill) || filled;
+    }
+
+    const expYearShort = card.exp_year?.toString()?.slice(-2);
+    if (card.exp_month && expYearShort) {
+        const expValue = `${card.exp_month.toString().padStart(2, '0')}/${expYearShort}`;
+        filled = fillStrategy(profile.cardExpirySelectors, expValue) || filled;
+    }
+
+    if (card.cvv) {
+        filled = fillStrategy(profile.cvvSelectors, card.cvv) || filled;
+    }
+
+    return filled;
+}
+
+function fillAddressFields(profile: any, address: any, fillStrategy: (selectors: string[] | undefined, value: string) => boolean): boolean {
+    if (!address) return false;
+    let filled = false;
+
+    if (address.address1) {
+        filled = fillStrategy(profile.address1Selectors, address.address1) || filled;
+    }
+    if (address.address2) {
+        filled = fillStrategy(profile.address2Selectors, address.address2) || filled;
+    }
+    if (address.city) {
+        filled = fillStrategy(profile.citySelectors, address.city) || filled;
+    }
+    if (address.state) {
+        filled = fillStrategy(profile.stateSelectors, address.state) || filled;
+    }
+    if (address.zip) {
+        filled = fillStrategy(profile.zipSelectors, address.zip) || filled;
+    }
+    if (address.phone) {
+        filled = fillStrategy(profile.phoneSelectors, address.phone) || filled;
+    }
+    if (address.name) {
+        filled = fillStrategy(profile.nameSelectors, address.name) || filled;
+    }
+
+    return filled;
+}
+
+function fillCombined({ card, address, contextSelector, sendResponse }: FillCombinedParams) {
+    const cardId = card?.id ?? null;
+    const addressId = address?.id ?? null;
+
+    chrome.runtime.sendMessage(
+        {
+            type: 'GET_SELECTORS',
+            payload: { domain: window.location.hostname },
+        },
+        (response) => {
+            if (chrome.runtime.lastError) {
+                sendResponse?.({
+                    success: false,
+                    cardFilled: false,
+                    addressFilled: false,
+                    cardId,
+                    addressId,
+                    error: chrome.runtime.lastError.message,
+                });
+                return;
+            }
+
+            if (!response || !response.profile) {
+                sendResponse?.({
+                    success: false,
+                    cardFilled: false,
+                    addressFilled: false,
+                    cardId,
+                    addressId,
+                    error: 'No selectors for this domain',
+                });
+                return;
+            }
+
+            const profile = response.profile;
+
+            let contextEl: HTMLElement | null = null;
+            if (contextSelector) {
+                contextEl = document.querySelector(contextSelector) as HTMLElement | null;
+                if (!contextEl) {
+                    sendResponse?.({
+                        success: false,
+                        cardFilled: false,
+                        addressFilled: false,
+                        cardId,
+                        addressId,
+                        error: 'Context element not found',
+                    });
+                    return;
+                }
+            }
+
+            const fillStrategy = contextEl
+                ? (selectors: string[] | undefined, value: string) =>
+                      fillNearestWithContext(contextEl as HTMLElement, selectors, value)
+                : (selectors: string[] | undefined, value: string) => fillInput(selectors, value);
+
+            const cardFilled = fillCardFields(profile, card, fillStrategy);
+            const addressFilled = fillAddressFields(profile, address, fillStrategy);
+
+            sendResponse?.({
+                success: cardFilled || addressFilled,
+                cardFilled,
+                addressFilled,
+                cardId,
+                addressId,
+            });
+        }
+    );
 }
 
 type CardTextCandidate = {
@@ -289,100 +410,10 @@ function collectElements(selectors?: string[]): HTMLElement[] {
 }
 
 function fillForContext(card: any, contextSelector: string, sendResponse?: (resp: any) => void) {
-    const contextEl = document.querySelector(contextSelector) as HTMLElement | null;
-    if (!contextEl) {
-        sendResponse?.({ error: 'Context element not found' });
-        return;
-    }
-
-    chrome.runtime.sendMessage(
-        {
-            type: 'GET_SELECTORS',
-            payload: { domain: window.location.hostname },
-        },
-        (response) => {
-            if (!response || !response.profile) {
-                sendResponse?.({ error: 'No selectors for this domain' });
-                return;
-            }
-
-            const {
-                cardNumberSelectors,
-                cardExpirySelectors,
-                cvvSelectors,
-                address1Selectors,
-                address2Selectors,
-                citySelectors,
-                stateSelectors,
-                zipSelectors,
-                phoneSelectors,
-                nameSelectors,
-            } = response.profile;
-
-            let filled = false;
-
-            const fillNearest = (selectors: string[] | undefined, value: string) => {
-                const candidates = collectElements(selectors);
-                const input = pickNearestInput(contextEl, candidates);
-                if (input) {
-                    input.value = value;
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-                    return true;
-                }
-                return false;
-            };
-
-            // Fill number if editable
-            const numberToFill = card.pan ?? card.last4;
-            if (numberToFill) {
-                filled = fillNearest(cardNumberSelectors, numberToFill) || filled;
-            }
-
-            // Fill expiry
-            const expYearShort = card.exp_year?.toString()?.slice(-2);
-            if (card.exp_month && expYearShort) {
-                const expValue = `${card.exp_month.toString().padStart(2, '0')}/${expYearShort}`;
-                filled = fillNearest(cardExpirySelectors, expValue) || filled;
-            }
-
-            // Fill CVV
-            if (card.cvv) {
-                filled = fillNearest(cvvSelectors, card.cvv) || filled;
-            }
-
-            // Address fields if present on card (not currently in card payload, so skip unless present)
-            if (card.address1) {
-                filled = fillNearest(address1Selectors, card.address1) || filled;
-            }
-            if (card.address2) {
-                filled = fillNearest(address2Selectors, card.address2) || filled;
-            }
-            if (card.city) {
-                filled = fillNearest(citySelectors, card.city) || filled;
-            }
-            if (card.state) {
-                filled = fillNearest(stateSelectors, card.state) || filled;
-            }
-            if (card.zip) {
-                filled = fillNearest(zipSelectors, card.zip) || filled;
-            }
-            if (card.phone) {
-                filled = fillNearest(phoneSelectors, card.phone) || filled;
-            }
-            if (card.name) {
-                filled = fillNearest(nameSelectors, card.name) || filled;
-            }
-
-            if (filled) {
-                chrome.runtime.sendMessage({
-                    type: 'MARK_USED',
-                    payload: { cardId: card.id },
-                });
-                sendResponse?.({ success: true });
-            } else {
-                sendResponse?.({ error: 'No matching inputs near context' });
-            }
-        }
-    );
+    fillCombined({
+        card,
+        address: null,
+        contextSelector,
+        sendResponse,
+    });
 }

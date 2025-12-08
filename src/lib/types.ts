@@ -43,6 +43,7 @@ export interface SelectorProfile {
 export interface AuditLog {
   id: string;
   card_id: string | null;
+  address_id: string | null;
   action: string;
   details: any;
   created_at: string;
@@ -57,5 +58,8 @@ export interface Address {
   zip: string | null;
   phone: string;
   name: string;
+  last_used: string | null;
+  usage_count: number;
+  excluded_until: string | null;
   created_at: string;
 }

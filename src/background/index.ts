@@ -76,16 +76,21 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
         try {
             const tabId = await getActiveTabId();
             const candidates = await scanForCardCandidates(tabId);
-            const cards = await fetchCards(userId, role, groupId, true);
+            const [cards, addresses] = await Promise.all([
+                fetchCards(userId, role, groupId, true),
+                fetchAddresses(true),
+            ]);
 
-            if (!cards || cards.length === 0) {
-                sendResponse({ error: 'No active cards available' });
+            if ((!cards || cards.length === 0) && (!addresses || addresses.length === 0)) {
+                sendResponse({ error: 'No active cards or addresses available' });
                 return;
             }
 
-            const matches = matchCandidatesToCards(candidates, cards);
+            const matches = matchCandidatesToCards(candidates, cards || []);
+            const bestAddress = (addresses && addresses.length > 0) ? addresses[0] : null;
+            const responses: any[] = [];
 
-            if (matches.length > 0) {
+            if (matches.length > 0 && cards && cards.length > 0) {
                 const dedup = new Set<string>();
                 for (const match of matches) {
                     const key = `${match.card.id}:${match.selector}`;
@@ -95,31 +100,58 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
                     const fullCard = await fetchFullCard(match.card.id, role, groupId);
                     if (!fullCard) continue;
 
-                    chrome.tabs.sendMessage(tabId, {
-                        type: 'FILL_FOR_CONTEXT',
+                    const resp = await sendFillCombined(tabId, {
                         card: fullCard,
+                        address: bestAddress,
                         contextSelector: match.selector,
                     });
+
+                    responses.push(resp);
+
+                    if (resp?.cardFilled || resp?.addressFilled) {
+                        await markAutofillUsed(
+                            resp.cardFilled ? resp.cardId : null,
+                            resp.addressFilled ? resp.addressId : null,
+                            'next'
+                        );
+                    }
                 }
 
-                sendResponse({ success: true, matched: dedup.size, fallback: false });
+                sendResponse({
+                    success: responses.some(r => r?.success),
+                    matched: responses.filter(r => r?.success).length,
+                    fallback: false,
+                    cardUsed: responses.some(r => r?.cardFilled),
+                    addressUsed: responses.some(r => r?.addressFilled),
+                });
                 return;
             }
 
-            // Fallback: use best card (first) and fill globally
-            const bestCard = cards[0];
-            const fullCard = await fetchFullCard(bestCard.id, role, groupId);
-            if (!fullCard) {
-                sendResponse({ error: 'Unable to fetch full card' });
-                return;
-            }
+            // Fallback: use best card (first) and/or best address globally
+            const bestCard = cards && cards.length > 0 ? cards[0] : null;
+            const fullCard = bestCard ? await fetchFullCard(bestCard.id, role, groupId) : null;
 
-            chrome.tabs.sendMessage(tabId, {
-                type: 'FILL_FIELDS',
+            const resp = await sendFillCombined(tabId, {
                 card: fullCard,
+                address: bestAddress,
             });
+            responses.push(resp);
 
-            sendResponse({ success: true, matched: 0, fallback: true });
+            if (resp?.cardFilled || resp?.addressFilled) {
+                await markAutofillUsed(
+                    resp.cardFilled ? resp.cardId : null,
+                    resp.addressFilled ? resp.addressId : null,
+                    'next'
+                );
+            }
+
+            sendResponse({
+                success: resp?.success,
+                matched: 0,
+                fallback: true,
+                cardUsed: !!resp?.cardFilled,
+                addressUsed: !!resp?.addressFilled,
+            });
         } catch (err: any) {
             sendResponse({ error: err?.message || 'Autofill failed' });
         }
@@ -175,6 +207,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // Will respond asynchronously
   }
 
+  if (message.type === 'GET_ADDRESSES') {
+    const { activeOnly } = message.payload || {};
+    const params = new URLSearchParams();
+    if (activeOnly) params.append('activeOnly', 'true');
+
+    fetch(`http://localhost:3000/api/addresses?${params.toString()}`)
+      .then(res => res.json())
+      .then(data => sendResponse({ addresses: data }))
+      .catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
+
   if (message.type === 'CREATE_CARD') {
     const { userId, groupId } = message.payload || {};
     
@@ -219,15 +263,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === 'MARK_USED') {
-      const { cardId } = message.payload;
-      fetch(`http://localhost:3000/api/cards/${cardId}/mark_used`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      .then(res => res.json())
-      .then(() => sendResponse({ success: true }))
-      .catch(err => console.error(err));
-      // No response needed strictly
+      const { cardId, addressId, context } = message.payload || {};
+      markAutofillUsed(cardId, addressId, context)
+        .then(() => sendResponse({ success: true }))
+        .catch((err) => {
+          console.error(err);
+          sendResponse({ error: err?.message });
+        });
+      return true;
   }
 
   if (message.type === 'AUTOFILL_NEXT') {
@@ -237,36 +280,50 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === 'AUTOFILL_CARD') {
-    const { cardId, role, groupId } = message.payload || {};
+    const { cardId, addressId, address: addressPayload, role, groupId } = message.payload || {};
     
     (async () => {
         try {
-            const fullCard = await fetchFullCard(cardId, role, groupId);
-            if (!fullCard) {
+            const fullCard = cardId ? await fetchFullCard(cardId, role, groupId) : null;
+            if (cardId && !fullCard) {
                 sendResponse({ error: 'Card not found' });
                 return;
             }
 
-            const tabId = await getActiveTabId();
-            const candidates = await scanForCardCandidates(tabId);
-            const contextual = candidates.filter(c => c.last4 === fullCard.last4);
-
-            if (contextual.length === 1) {
-                chrome.tabs.sendMessage(tabId, {
-                    type: 'FILL_FOR_CONTEXT',
-                    card: fullCard,
-                    contextSelector: contextual[0].selector,
-                });
-                sendResponse({ success: true, contextual: true });
-                return;
+            let addressToUse = addressPayload || null;
+            if (!addressToUse && addressId) {
+                addressToUse = await fetchFullAddress(addressId);
             }
 
-            // Fallback to global fill
-            chrome.tabs.sendMessage(tabId, {
-                type: 'FILL_FIELDS',
-                card: fullCard,
-            });
-            sendResponse({ success: true, contextual: false });
+            const tabId = await getActiveTabId();
+            const candidates = await scanForCardCandidates(tabId);
+            const contextual = fullCard
+                ? candidates.filter(c => c.last4 === fullCard.last4)
+                : [];
+
+            let resp;
+            if (contextual.length === 1) {
+                resp = await sendFillCombined(tabId, {
+                    card: fullCard,
+                    address: addressToUse,
+                    contextSelector: contextual[0].selector,
+                });
+                sendResponse({ success: !!resp?.success, contextual: true });
+            } else {
+                resp = await sendFillCombined(tabId, {
+                    card: fullCard,
+                    address: addressToUse,
+                });
+                sendResponse({ success: !!resp?.success, contextual: false });
+            }
+
+            if (resp?.cardFilled || resp?.addressFilled) {
+                await markAutofillUsed(
+                    resp.cardFilled ? resp.cardId : null,
+                    resp.addressFilled ? resp.addressId : null,
+                    'card_tile'
+                );
+            }
         } catch (err: any) {
             sendResponse({ error: err?.message || 'Autofill failed' });
         }
@@ -318,6 +375,12 @@ async function fetchCards(userId?: string, role?: string, groupId?: string, acti
     return fetch(`http://localhost:3000/api/cards?${params.toString()}`).then(res => res.json());
 }
 
+async function fetchAddresses(activeOnly: boolean = false): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (activeOnly) params.append('activeOnly', 'true');
+    return fetch(`http://localhost:3000/api/addresses?${params.toString()}`).then(res => res.json());
+}
+
 async function fetchFullCard(cardId: string, role?: string, groupId?: string): Promise<any | null> {
     const params = new URLSearchParams();
     if (role) params.append('role', role);
@@ -327,6 +390,29 @@ async function fetchFullCard(cardId: string, role?: string, groupId?: string): P
         .then(res => res.json())
         .then(data => (data && !data.error ? data : null))
         .catch(() => null);
+}
+
+async function fetchFullAddress(addressId: string): Promise<any | null> {
+    return fetch(`http://localhost:3000/api/addresses/${addressId}`)
+        .then(res => res.json())
+        .then(data => (data && !data.error ? data : null))
+        .catch(() => null);
+}
+
+async function markAutofillUsed(cardId?: string | null, addressId?: string | null, context?: string): Promise<void> {
+    try {
+        await fetch('http://localhost:3000/api/autofill/mark_used', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                cardId: cardId ?? null,
+                addressId: addressId ?? null,
+                context: context ?? null,
+            }),
+        });
+    } catch (err) {
+        console.error('[Background] Error marking autofill usage:', err);
+    }
 }
 
 function matchCandidatesToCards(candidates: CardCandidate[], cards: any[]): { card: any; selector: string }[] {
@@ -345,4 +431,40 @@ function matchCandidatesToCards(candidates: CardCandidate[], cards: any[]): { ca
         }
     }
     return matches;
+}
+
+function sendFillCombined(tabId: number, payload: { card?: any; address?: any; contextSelector?: string | null }): Promise<any> {
+    return new Promise((resolve) => {
+        chrome.tabs.sendMessage(
+            tabId,
+            {
+                type: 'FILL_COMBINED',
+                card: payload.card ?? null,
+                address: payload.address ?? null,
+                contextSelector: payload.contextSelector ?? null,
+            },
+            (response) => {
+                if (chrome.runtime.lastError) {
+                    console.warn('[Background] FILL_COMBINED error:', chrome.runtime.lastError);
+                    resolve({
+                        success: false,
+                        cardFilled: false,
+                        addressFilled: false,
+                        cardId: payload.card?.id ?? null,
+                        addressId: payload.address?.id ?? null,
+                    });
+                    return;
+                }
+                resolve(
+                    response || {
+                        success: false,
+                        cardFilled: false,
+                        addressFilled: false,
+                        cardId: payload.card?.id ?? null,
+                        addressId: payload.address?.id ?? null,
+                    }
+                );
+            }
+        );
+    });
 }
