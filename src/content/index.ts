@@ -8,7 +8,7 @@ document.addEventListener('contextmenu', (event) => {
   lastClickedElement = event.target as HTMLElement;
 }, true);
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'CONTEXT_MENU_CLICK') {
     console.log('Context menu clicked:', message.menuId);
     
@@ -19,6 +19,16 @@ chrome.runtime.onMessage.addListener((message) => {
   
   if (message.type === 'FILL_FIELDS') {
       fillFields(message.card);
+  }
+
+  if (message.type === 'SCAN_FOR_CARD_NUMBERS') {
+      const candidates = findCardTextCandidates();
+      sendResponse?.({ candidates });
+  }
+
+  if (message.type === 'FILL_FOR_CONTEXT') {
+      fillForContext(message.card, message.contextSelector, sendResponse);
+      return true; // async response
   }
 });
 
@@ -152,4 +162,227 @@ function fillInput(selectors: string[], value: string): boolean {
         });
     }
     return filledAny;
+}
+
+type CardTextCandidate = {
+    last4: string;
+    selector: string;
+    text: string;
+};
+
+function findCardTextCandidates(): CardTextCandidate[] {
+    const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        {
+            acceptNode(node: Node) {
+                const text = node.textContent || '';
+                const normalized = text.trim();
+                if (!normalized) return NodeFilter.FILTER_REJECT;
+                if (normalized.length > 500) return NodeFilter.FILTER_REJECT;
+                return NodeFilter.FILTER_ACCEPT;
+            },
+        } as any
+    );
+
+    const results: CardTextCandidate[] = [];
+    let node: Node | null;
+
+    while ((node = walker.nextNode())) {
+        const text = node.textContent || '';
+        const digitsAll = text.replace(/\D/g, '');
+        // Mitigate false positives: require 12+ digits in this text node
+        if (digitsAll.length < 12) continue;
+
+        const matches = text.match(/\d{4,}/g);
+        if (!matches) continue;
+
+        const el = (node.parentElement || node.parentNode) as HTMLElement | null;
+        if (!el) continue;
+
+        for (const match of matches) {
+            const digits = match.replace(/\D/g, '');
+            if (digits.length < 4) continue;
+            const last4 = digits.slice(-4);
+            results.push({
+                last4,
+                selector: getCssSelector(el),
+                text: text.trim().slice(0, 120),
+            });
+        }
+    }
+
+    return results;
+}
+
+function isVisibleInput(el: Element): el is HTMLInputElement {
+    if (!(el instanceof HTMLInputElement)) return false;
+    if (el.type === 'hidden' || el.disabled || el.readOnly) return false;
+    const style = getComputedStyle(el);
+    if (style.visibility === 'hidden' || style.display === 'none') return false;
+    if (!el.offsetParent && style.position !== 'fixed') return false;
+    return true;
+}
+
+function scoreDistance(context: HTMLElement, candidate: HTMLElement): number {
+    let score = 0;
+
+    const contextForm = context.closest('form');
+    const candidateForm = candidate.closest('form');
+    if (contextForm && candidateForm && contextForm === candidateForm) {
+        score -= 1000; // strong preference for same form
+    }
+
+    const contextContainer =
+        context.closest("[class*='card'], [class*='payment'], [data-testid*='card']");
+    const candidateContainer =
+        candidate.closest("[class*='card'], [class*='payment'], [data-testid*='card']");
+    if (contextContainer && candidateContainer && contextContainer === candidateContainer) {
+        score -= 500; // prefer same payment/card container
+    }
+
+    const r1 = context.getBoundingClientRect();
+    const r2 = candidate.getBoundingClientRect();
+    const cx1 = r1.left + r1.width / 2;
+    const cy1 = r1.top + r1.height / 2;
+    const cx2 = r2.left + r2.width / 2;
+    const cy2 = r2.top + r2.height / 2;
+    const dx = cx2 - cx1;
+    const dy = cy2 - cy1;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // Prefer fields below the context text
+    if (dy > 0) {
+        score += dist;
+    } else {
+        score += dist + 200;
+    }
+
+    return score;
+}
+
+function pickNearestInput(base: HTMLElement, candidates: HTMLElement[]): HTMLInputElement | null {
+    let best: { el: HTMLInputElement; score: number } | null = null;
+    for (const cand of candidates) {
+        if (!isVisibleInput(cand)) continue;
+        const s = scoreDistance(base, cand);
+        if (!best || s < best.score) {
+            best = { el: cand, score: s };
+        }
+    }
+    return best?.el ?? null;
+}
+
+function collectElements(selectors?: string[]): HTMLElement[] {
+    if (!selectors) return [];
+    const out: HTMLElement[] = [];
+    const seen = new Set<HTMLElement>();
+    selectors.forEach((sel) => {
+        document.querySelectorAll(sel).forEach((el) => {
+            if (el instanceof HTMLElement && !seen.has(el)) {
+                seen.add(el);
+                out.push(el);
+            }
+        });
+    });
+    return out;
+}
+
+function fillForContext(card: any, contextSelector: string, sendResponse?: (resp: any) => void) {
+    const contextEl = document.querySelector(contextSelector) as HTMLElement | null;
+    if (!contextEl) {
+        sendResponse?.({ error: 'Context element not found' });
+        return;
+    }
+
+    chrome.runtime.sendMessage(
+        {
+            type: 'GET_SELECTORS',
+            payload: { domain: window.location.hostname },
+        },
+        (response) => {
+            if (!response || !response.profile) {
+                sendResponse?.({ error: 'No selectors for this domain' });
+                return;
+            }
+
+            const {
+                cardNumberSelectors,
+                cardExpirySelectors,
+                cvvSelectors,
+                address1Selectors,
+                address2Selectors,
+                citySelectors,
+                stateSelectors,
+                zipSelectors,
+                phoneSelectors,
+                nameSelectors,
+            } = response.profile;
+
+            let filled = false;
+
+            const fillNearest = (selectors: string[] | undefined, value: string) => {
+                const candidates = collectElements(selectors);
+                const input = pickNearestInput(contextEl, candidates);
+                if (input) {
+                    input.value = value;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    return true;
+                }
+                return false;
+            };
+
+            // Fill number if editable
+            const numberToFill = card.pan ?? card.last4;
+            if (numberToFill) {
+                filled = fillNearest(cardNumberSelectors, numberToFill) || filled;
+            }
+
+            // Fill expiry
+            const expYearShort = card.exp_year?.toString()?.slice(-2);
+            if (card.exp_month && expYearShort) {
+                const expValue = `${card.exp_month.toString().padStart(2, '0')}/${expYearShort}`;
+                filled = fillNearest(cardExpirySelectors, expValue) || filled;
+            }
+
+            // Fill CVV
+            if (card.cvv) {
+                filled = fillNearest(cvvSelectors, card.cvv) || filled;
+            }
+
+            // Address fields if present on card (not currently in card payload, so skip unless present)
+            if (card.address1) {
+                filled = fillNearest(address1Selectors, card.address1) || filled;
+            }
+            if (card.address2) {
+                filled = fillNearest(address2Selectors, card.address2) || filled;
+            }
+            if (card.city) {
+                filled = fillNearest(citySelectors, card.city) || filled;
+            }
+            if (card.state) {
+                filled = fillNearest(stateSelectors, card.state) || filled;
+            }
+            if (card.zip) {
+                filled = fillNearest(zipSelectors, card.zip) || filled;
+            }
+            if (card.phone) {
+                filled = fillNearest(phoneSelectors, card.phone) || filled;
+            }
+            if (card.name) {
+                filled = fillNearest(nameSelectors, card.name) || filled;
+            }
+
+            if (filled) {
+                chrome.runtime.sendMessage({
+                    type: 'MARK_USED',
+                    payload: { cardId: card.id },
+                });
+                sendResponse?.({ success: true });
+            } else {
+                sendResponse?.({ error: 'No matching inputs near context' });
+            }
+        }
+    );
 }

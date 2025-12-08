@@ -72,48 +72,58 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 function performAutofillNext(userId: string | undefined, role: string | undefined, groupId: string | undefined, sendResponse: (response: any) => void) {
-    const params = new URLSearchParams({ activeOnly: 'true' });
-    if (userId) params.append('userId', userId);
-    if (role) params.append('role', role);
-    if (groupId) params.append('groupId', groupId);
-    
-    // 1. Get best card (active only)
-    fetch(`http://localhost:3000/api/cards?${params.toString()}`)
-      .then(res => res.json())
-      .then(cards => {
-        const bestCard = cards[0]; // Already sorted by backend
-        if (!bestCard) {
-          sendResponse({ error: 'No active cards available' });
-          return;
-        }
+    (async () => {
+        try {
+            const tabId = await getActiveTabId();
+            const candidates = await scanForCardCandidates(tabId);
+            const cards = await fetchCards(userId, role, groupId, true);
 
-        // 2. Fetch sensitive fields for autofill
-        const fullParams = new URLSearchParams();
-        if (role) fullParams.append('role', role);
-        if (groupId) fullParams.append('groupId', groupId);
+            if (!cards || cards.length === 0) {
+                sendResponse({ error: 'No active cards available' });
+                return;
+            }
 
-        fetch(`http://localhost:3000/api/cards/${bestCard.id}/full?${fullParams.toString()}`)
-          .then(res => res.json())
-          .then(fullCard => {
-            // 3. Send to active tab content script
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                if (tabs[0]?.id) {
-                    chrome.tabs.sendMessage(tabs[0].id, {
-                        type: 'FILL_FIELDS',
-                        card: fullCard
+            const matches = matchCandidatesToCards(candidates, cards);
+
+            if (matches.length > 0) {
+                const dedup = new Set<string>();
+                for (const match of matches) {
+                    const key = `${match.card.id}:${match.selector}`;
+                    if (dedup.has(key)) continue;
+                    dedup.add(key);
+
+                    const fullCard = await fetchFullCard(match.card.id, role, groupId);
+                    if (!fullCard) continue;
+
+                    chrome.tabs.sendMessage(tabId, {
+                        type: 'FILL_FOR_CONTEXT',
+                        card: fullCard,
+                        contextSelector: match.selector,
                     });
-                    
-                    // Mark used is now handled by content script callback via MARK_USED message
-                    
-                    sendResponse({ success: true, card: fullCard });
-                } else {
-                    sendResponse({ error: 'No active tab' });
                 }
+
+                sendResponse({ success: true, matched: dedup.size, fallback: false });
+                return;
+            }
+
+            // Fallback: use best card (first) and fill globally
+            const bestCard = cards[0];
+            const fullCard = await fetchFullCard(bestCard.id, role, groupId);
+            if (!fullCard) {
+                sendResponse({ error: 'Unable to fetch full card' });
+                return;
+            }
+
+            chrome.tabs.sendMessage(tabId, {
+                type: 'FILL_FIELDS',
+                card: fullCard,
             });
-          })
-          .catch(err => sendResponse({ error: err.message }));
-      })
-      .catch(err => sendResponse({ error: err.message }));
+
+            sendResponse({ success: true, matched: 0, fallback: true });
+        } catch (err: any) {
+            sendResponse({ error: err?.message || 'Autofill failed' });
+        }
+    })();
 }
 
 // Listen for keyboard commands
@@ -229,32 +239,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'AUTOFILL_CARD') {
     const { cardId, role, groupId } = message.payload || {};
     
-    const params = new URLSearchParams();
-    if (role) params.append('role', role);
-    if (groupId) params.append('groupId', groupId);
-
-    fetch(`http://localhost:3000/api/cards/${cardId}/full?${params.toString()}`)
-      .then(res => res.json())
-      .then(card => {
-        if (!card || card.error) {
-          sendResponse({ error: card?.error || 'Card not found' });
-          return;
-        }
-
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]?.id) {
-                chrome.tabs.sendMessage(tabs[0].id, {
-                    type: 'FILL_FIELDS',
-                    card: card
-                });
-                sendResponse({ success: true, card });
-            } else {
-                sendResponse({ error: 'No active tab' });
+    (async () => {
+        try {
+            const fullCard = await fetchFullCard(cardId, role, groupId);
+            if (!fullCard) {
+                sendResponse({ error: 'Card not found' });
+                return;
             }
-        });
-      })
-      .catch(err => sendResponse({ error: err.message }));
-      return true;
+
+            const tabId = await getActiveTabId();
+            const candidates = await scanForCardCandidates(tabId);
+            const contextual = candidates.filter(c => c.last4 === fullCard.last4);
+
+            if (contextual.length === 1) {
+                chrome.tabs.sendMessage(tabId, {
+                    type: 'FILL_FOR_CONTEXT',
+                    card: fullCard,
+                    contextSelector: contextual[0].selector,
+                });
+                sendResponse({ success: true, contextual: true });
+                return;
+            }
+
+            // Fallback to global fill
+            chrome.tabs.sendMessage(tabId, {
+                type: 'FILL_FIELDS',
+                card: fullCard,
+            });
+            sendResponse({ success: true, contextual: false });
+        } catch (err: any) {
+            sendResponse({ error: err?.message || 'Autofill failed' });
+        }
+    })();
+    return true;
   }
   
   if (message.type === 'GET_SELECTORS') {
@@ -266,3 +283,66 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return true;
   }
 });
+
+type CardCandidate = { last4: string; selector: string; text?: string };
+
+function getActiveTabId(): Promise<number> {
+    return new Promise((resolve, reject) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.id !== undefined) resolve(tabs[0].id);
+            else reject(new Error('No active tab'));
+        });
+    });
+}
+
+function scanForCardCandidates(tabId: number): Promise<CardCandidate[]> {
+    return new Promise((resolve) => {
+        chrome.tabs.sendMessage(tabId, { type: 'SCAN_FOR_CARD_NUMBERS' }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.warn('SCAN_FOR_CARD_NUMBERS error:', chrome.runtime.lastError);
+                resolve([]);
+                return;
+            }
+            resolve((response?.candidates as CardCandidate[]) || []);
+        });
+    });
+}
+
+async function fetchCards(userId?: string, role?: string, groupId?: string, activeOnly: boolean = false): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (activeOnly) params.append('activeOnly', 'true');
+    if (userId) params.append('userId', userId);
+    if (role) params.append('role', role);
+    if (groupId) params.append('groupId', groupId);
+
+    return fetch(`http://localhost:3000/api/cards?${params.toString()}`).then(res => res.json());
+}
+
+async function fetchFullCard(cardId: string, role?: string, groupId?: string): Promise<any | null> {
+    const params = new URLSearchParams();
+    if (role) params.append('role', role);
+    if (groupId) params.append('groupId', groupId);
+
+    return fetch(`http://localhost:3000/api/cards/${cardId}/full?${params.toString()}`)
+        .then(res => res.json())
+        .then(data => (data && !data.error ? data : null))
+        .catch(() => null);
+}
+
+function matchCandidatesToCards(candidates: CardCandidate[], cards: any[]): { card: any; selector: string }[] {
+    const byLast4 = new Map<string, any[]>();
+    for (const card of cards) {
+        const arr = byLast4.get(card.last4) ?? [];
+        arr.push(card);
+        byLast4.set(card.last4, arr);
+    }
+
+    const matches: { card: any; selector: string }[] = [];
+    for (const candidate of candidates) {
+        const arr = byLast4.get(candidate.last4) || [];
+        if (arr.length === 1) {
+            matches.push({ card: arr[0], selector: candidate.selector });
+        }
+    }
+    return matches;
+}
