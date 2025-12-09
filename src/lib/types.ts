@@ -11,7 +11,6 @@ export interface Card {
   pan?: string; // Full card number (only returned for autofill)
   cvv?: string; // CVV (only returned for autofill)
   last4: string;
-  brand: string; // Visa, MasterCard, etc.
   exp_month: number;
   exp_year: number;
   created_by: string; // User ID

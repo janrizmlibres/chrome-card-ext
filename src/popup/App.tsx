@@ -114,7 +114,7 @@ function App() {
     const query = searchQuery.toLowerCase();
     return (
       card.last4.includes(query) ||
-      card.brand.toLowerCase().includes(query) ||
+      card.slash_card_id.toLowerCase().includes(query) ||
       card.labels.some((l) => l.toLowerCase().includes(query))
     );
   });
@@ -358,7 +358,7 @@ function App() {
                           •••• {card.last4}
                         </span>
                         <span className="px-2 py-0.5 bg-gray-100 text-xs rounded text-gray-600 font-medium">
-                          {card.brand}
+                          Slash
                         </span>
                       </div>
                       {card.excluded_until &&

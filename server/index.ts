@@ -3,6 +3,11 @@ import cors from "cors";
 import { supabase } from "./supabase";
 import { Card, SelectorProfile, Address, NetworkProfile } from "../src/lib/types";
 
+// Slash API configuration
+const SLASH_API_BASE_URL = process.env.SLASH_API_BASE_URL || "https://api.joinslash.com";
+const SLASH_API_KEY = process.env.SLASH_API_KEY || "";
+const SLASH_ACCOUNT_ID = process.env.SLASH_ACCOUNT_ID || "";
+
 const app = express();
 const PORT = 3000;
 
@@ -62,43 +67,91 @@ app.get("/api/cards", async (req, res) => {
 
 // POST /api/cards/create
 app.post("/api/cards/create", async (req, res) => {
-  const { userId, groupId } = req.body;
+  try {
+    const { userId, groupId } = req.body || {};
 
-  const pan = Array(16)
-    .fill(0)
-    .map(() => Math.floor(Math.random() * 10))
-    .join("");
-  const last4 = pan.slice(-4);
-  const cvv = Math.floor(100 + Math.random() * 900).toString();
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
 
-  const newCard = {
-    slash_card_id: `slash-${Date.now()}`,
-    pan,
-    cvv,
-    last4,
-    brand: ["Visa", "MasterCard", "Amex"][Math.floor(Math.random() * 3)],
-    exp_month: Math.floor(Math.random() * 12) + 1,
-    exp_year: new Date().getFullYear() + Math.floor(Math.random() * 5),
-    created_by: userId,
-    slash_group_id: groupId || null,
-    labels: ["New"],
-    last_used: null,
-    usage_count: 0,
-    excluded_until: null,
-    active: true,
-  };
+    if (!SLASH_API_KEY || !SLASH_ACCOUNT_ID) {
+      console.error("[/api/cards/create] Missing Slash configuration: SLASH_API_KEY or SLASH_ACCOUNT_ID");
+      return res.status(500).json({ error: "Slash API is not configured on the server" });
+    }
 
-  const { data, error } = await supabase
-    .from("cards")
-    .insert(newCard)
-    .select()
-    .single();
+    const slashRequestBody: any = {
+      type: "virtual",
+      name: `Vault card ${groupId ? `(${groupId})` : ""}`.trim(),
+      accountId: SLASH_ACCOUNT_ID,
+      userData: {
+        slashGroupId: groupId || null,
+        createdByUserId: userId,
+      },
+    };
 
-  if (error) return res.status(500).json({ error: error.message });
-  if (!data) return res.status(500).json({ error: "No card returned after creation" });
+    const slashResponse = await fetch(`${SLASH_API_BASE_URL}/card?include_pan=true`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": SLASH_API_KEY,
+      },
+      body: JSON.stringify(slashRequestBody),
+    });
 
-  const { pan: _pan, cvv: _cvv, ...safeCard } = data as Card & { cvv?: string };
-  res.json(safeCard);
+    if (!slashResponse.ok) {
+      const errorText = await slashResponse.text().catch(() => "");
+      console.error(
+        "[/api/cards/create] Slash API error:",
+        slashResponse.status,
+        slashResponse.statusText,
+        errorText
+      );
+      return res.status(502).json({
+        error: "Failed to create card with Slash",
+        status: slashResponse.status,
+      });
+    }
+
+    const slashCard = await slashResponse.json();
+
+    const expMonth = parseInt(slashCard.expiryMonth, 10);
+    const expYear = parseInt(slashCard.expiryYear, 10);
+
+    const newCard = {
+      slash_card_id: slashCard.id,
+      pan: slashCard.pan || null,
+      cvv: slashCard.cvv || null,
+      last4: slashCard.last4,
+      exp_month: Number.isNaN(expMonth) ? null : expMonth,
+      exp_year: Number.isNaN(expYear) ? null : expYear,
+      created_by: userId,
+      slash_group_id: groupId || null,
+      labels: [],
+      last_used: null,
+      usage_count: 0,
+      excluded_until: null,
+      active: slashCard.status === "active",
+      created_at: slashCard.createdAt || undefined,
+    };
+
+    const { data, error } = await supabase
+      .from("cards")
+      .insert(newCard)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("[/api/cards/create] Supabase insert error:", error);
+      return res.status(500).json({ error: error.message });
+    }
+    if (!data) return res.status(500).json({ error: "No card returned after creation" });
+
+    const { pan: _pan, cvv: _cvv, ...safeCard } = data as Card & { cvv?: string };
+    res.json(safeCard);
+  } catch (e: any) {
+    console.error("[/api/cards/create] Unexpected error:", e);
+    res.status(500).json({ error: e?.message || "Unexpected error" });
+  }
 });
 
 // GET /api/cards/:id/full - returns sensitive fields (pan, cvv) for autofill

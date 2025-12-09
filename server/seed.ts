@@ -35,7 +35,6 @@ async function seed() {
       slash_card_id: card.slash_card_id,
       pan: card.pan,
       last4: card.last4,
-      brand: card.brand,
       exp_month: card.exp_month,
       exp_year: card.exp_year,
       created_by: card.created_by,
