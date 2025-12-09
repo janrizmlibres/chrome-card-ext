@@ -1,6 +1,40 @@
 import { useState, useEffect, useRef } from "react";
 import { User, SelectorProfile, NetworkProfile } from "../lib/types";
-import { Trash2, Clock, Globe } from "lucide-react";
+import { Trash2, Clock, Globe, Plus } from "lucide-react";
+
+type SelectorFieldKey =
+  | "cardNumberSelectors"
+  | "cardExpirySelectors"
+  | "cvvSelectors"
+  | "address1Selectors"
+  | "address2Selectors"
+  | "citySelectors"
+  | "stateSelectors"
+  | "zipSelectors"
+  | "phoneSelectors"
+  | "nameSelectors";
+
+const SELECTOR_FIELDS: { key: SelectorFieldKey; label: string }[] = [
+  { key: "cardNumberSelectors", label: "Card Number" },
+  { key: "cardExpirySelectors", label: "Expiry" },
+  { key: "cvvSelectors", label: "CVV" },
+  { key: "nameSelectors", label: "Full Name" },
+  { key: "address1Selectors", label: "Address 1" },
+  { key: "address2Selectors", label: "Address 2" },
+  { key: "citySelectors", label: "City" },
+  { key: "stateSelectors", label: "State / Province" },
+  { key: "zipSelectors", label: "ZIP / Postal" },
+  { key: "phoneSelectors", label: "Phone" },
+];
+
+const selectorsToText = (selectors?: string[]) =>
+  Array.isArray(selectors) ? selectors.join("\n") : "";
+
+const textToSelectors = (text: string) =>
+  text
+    .split(/\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 interface AdminOptionsProps {
   user: User;
@@ -26,6 +60,21 @@ export function AdminOptions({ user }: AdminOptionsProps) {
     firstNamePath: "",
     lastNamePath: "",
   });
+  const [selectorEdits, setSelectorEdits] = useState<
+    Record<string, Record<SelectorFieldKey, string>>
+  >({});
+  const [selectorSaving, setSelectorSaving] = useState<Record<string, boolean>>({});
+  const [selectorSaveStatus, setSelectorSaveStatus] = useState<Record<string, string | null>>({});
+  const [editingProfiles, setEditingProfiles] = useState<Record<string, boolean>>({});
+
+  const buildEditState = (profile: SelectorProfile): Record<SelectorFieldKey, string> =>
+    SELECTOR_FIELDS.reduce((acc, field) => {
+      acc[field.key] = selectorsToText(profile[field.key] as string[]);
+      return acc;
+    }, {} as Record<SelectorFieldKey, string>);
+
+  const getSelectorList = (profile: SelectorProfile, key: SelectorFieldKey) =>
+    (profile[key] as string[]) || [];
 
   useEffect(() => {
     loadData();
@@ -33,6 +82,18 @@ export function AdminOptions({ user }: AdminOptionsProps) {
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setSelectorEdits((prev) => {
+      const next = { ...prev };
+      profiles.forEach((profile) => {
+        if (!next[profile.id]) {
+          next[profile.id] = buildEditState(profile);
+        }
+      });
+      return next;
+    });
+  }, [profiles]);
 
   const loadData = () => {
     setLoading(true);
@@ -74,6 +135,114 @@ export function AdminOptions({ user }: AdminOptionsProps) {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const [visibleFields, setVisibleFields] = useState<Record<string, SelectorFieldKey[]>>({});
+
+  useEffect(() => {
+    setVisibleFields((prev) => {
+      const next = { ...prev };
+      profiles.forEach((profile) => {
+        if (!next[profile.id]) {
+          const mapped = SELECTOR_FIELDS.filter(
+            (f) => getSelectorList(profile, f.key).length > 0
+          ).map((f) => f.key);
+          next[profile.id] = mapped;
+        }
+      });
+      return next;
+    });
+  }, [profiles]);
+
+  const handleAddField = (profileId: string, fieldKey: SelectorFieldKey) => {
+    setVisibleFields((prev) => ({
+      ...prev,
+      [profileId]: [...(prev[profileId] || []), fieldKey],
+    }));
+  };
+
+  const handleSelectorChange = (
+    profileId: string,
+    fieldKey: SelectorFieldKey,
+    value: string
+  ) => {
+    const profile = profiles.find((p) => p.id === profileId);
+    const base = profile ? buildEditState(profile) : ({} as Record<SelectorFieldKey, string>);
+    setSelectorEdits((prev) => ({
+      ...prev,
+      [profileId]: { ...(prev[profileId] || base), [fieldKey]: value },
+    }));
+  };
+
+  const handleSaveSelectors = async (profileId: string) => {
+    const profile = profiles.find((p) => p.id === profileId);
+    if (!profile) return;
+
+    const editState = selectorEdits[profileId] || buildEditState(profile);
+    const selectorsPayload = SELECTOR_FIELDS.reduce(
+      (acc, field) => ({
+        ...acc,
+        [field.key]: textToSelectors(editState[field.key] || ""),
+      }),
+      {} as Record<SelectorFieldKey, string[]>
+    );
+
+    setSelectorSaving((prev) => ({ ...prev, [profileId]: true }));
+    setSelectorSaveStatus((prev) => ({ ...prev, [profileId]: null }));
+
+    try {
+      const res = await fetch(`http://localhost:3000/api/selectorProfiles/${profileId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selectors: selectorsPayload }),
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.error) {
+        const errorMessage = data?.error || "Save failed";
+        setSelectorSaveStatus((prev) => ({ ...prev, [profileId]: errorMessage }));
+        return;
+      }
+
+      setProfiles((prev) =>
+        prev.map((p) => (p.id === profileId ? (data as SelectorProfile) : p))
+      );
+      setSelectorEdits((prev) => ({
+        ...prev,
+        [profileId]: buildEditState(data as SelectorProfile),
+      }));
+      setSelectorSaveStatus((prev) => ({ ...prev, [profileId]: "Saved" }));
+      setEditingProfiles((prev) => ({ ...prev, [profileId]: false }));
+    } catch (err: any) {
+      setSelectorSaveStatus((prev) => ({
+        ...prev,
+        [profileId]: err?.message || "Save failed",
+      }));
+    } finally {
+      setSelectorSaving((prev) => ({ ...prev, [profileId]: false }));
+      setTimeout(() => {
+        setSelectorSaveStatus((prev) => ({ ...prev, [profileId]: null }));
+      }, 2000);
+    }
+  };
+
+  const toggleEditProfile = (profileId: string) => {
+    setEditingProfiles((prev) => ({ ...prev, [profileId]: !prev[profileId] }));
+    // Reset edits when cancelling
+    if (editingProfiles[profileId]) {
+      const profile = profiles.find((p) => p.id === profileId);
+      if (profile) {
+        setSelectorEdits((prev) => ({
+          ...prev,
+          [profileId]: buildEditState(profile),
+        }));
+        // Reset visible fields to only those with values
+        const mapped = SELECTOR_FIELDS.filter(
+          (f) => getSelectorList(profile, f.key).length > 0
+        ).map((f) => f.key);
+        setVisibleFields((prev) => ({ ...prev, [profileId]: mapped }));
+      }
     }
   };
 
@@ -348,31 +517,113 @@ export function AdminOptions({ user }: AdminOptionsProps) {
             </div>
           ) : (
             <div className="space-y-2">
-              {profiles.map((profile) => (
-                <div key={profile.id} className="bg-white p-3 rounded-lg border flex justify-between items-start group">
-                  <div className="overflow-hidden">
-                    <div className="font-medium text-gray-800 truncate">{profile.domain}</div>
-                    <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                      {profile.cardNumberSelectors?.length > 0 && (
-                        <div>• Number: {profile.cardNumberSelectors.length} mapped</div>
-                      )}
-                      {profile.cardExpirySelectors?.length > 0 && (
-                        <div>• Expiry: {profile.cardExpirySelectors.length} mapped</div>
-                      )}
-                      {profile.cvvSelectors?.length > 0 && (
-                        <div>• CVV: {profile.cvvSelectors.length} mapped</div>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteProfile(profile.id)}
-                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                    title="Delete Mappings"
+              {profiles.map((profile) => {
+                const isEditing = editingProfiles[profile.id];
+                const editState = selectorEdits[profile.id] || buildEditState(profile);
+                
+                return (
+                  <div
+                    key={profile.id}
+                    className="bg-white p-3 rounded-lg border space-y-3"
                   >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="overflow-hidden">
+                        <div className="font-medium text-gray-800 truncate">{profile.domain}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                         <button
+                           onClick={() => toggleEditProfile(profile.id)}
+                           className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
+                         >
+                           {isEditing ? "Cancel" : "Edit"}
+                         </button>
+                         <button
+                           onClick={() => handleDeleteProfile(profile.id)}
+                           className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                           title="Delete Mappings"
+                         >
+                           <Trash2 className="w-4 h-4" />
+                         </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {SELECTOR_FIELDS.map((field) => {
+                        const current = getSelectorList(profile, field.key);
+                        const isVisible = visibleFields[profile.id]?.includes(field.key);
+                        
+                        // Show if it has values OR if it's explicitly visible in edit mode
+                        if (!isVisible && !isEditing && current.length === 0) return null;
+                        if (isEditing && !isVisible) return null;
+
+                        return (
+                          <div key={field.key} className="space-y-1">
+                            <div className="flex items-center justify-between text-xs text-gray-700">
+                              <span>{field.label}</span>
+                              <span className="text-gray-400">{current.length} mapped</span>
+                            </div>
+                            {isEditing ? (
+                                <textarea
+                                  value={editState[field.key] || ""}
+                                  onChange={(e) =>
+                                    handleSelectorChange(profile.id, field.key, e.target.value)
+                                  }
+                                  placeholder="One selector per line (CSS or XPath)"
+                                  rows={3}
+                                  className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                />
+                            ) : (
+                                <div className="text-[11px] text-gray-600 bg-gray-50 p-2 rounded border break-all">
+                                    {current.join(", ")}
+                                </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {isEditing && (
+                        <div className="space-y-3 pt-2 border-t">
+                          <div className="flex flex-wrap gap-2">
+                             {SELECTOR_FIELDS.filter(
+                               (f) => !visibleFields[profile.id]?.includes(f.key)
+                             ).map((field) => (
+                               <button
+                                 key={field.key}
+                                 onClick={() => handleAddField(profile.id, field.key)}
+                                 className="text-xs flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 border rounded-lg text-gray-600 transition-colors"
+                               >
+                                 <Plus className="w-3 h-3" />
+                                 Add {field.label}
+                               </button>
+                             ))}
+                          </div>
+                        
+                          <div className="flex items-center justify-between text-xs">
+                            {selectorSaveStatus[profile.id] && (
+                              <span
+                                className={`px-2 py-1 rounded ${
+                                  selectorSaveStatus[profile.id] === "Saved"
+                                    ? "bg-green-50 text-green-700"
+                                    : "bg-red-50 text-red-700"
+                                }`}
+                              >
+                                {selectorSaveStatus[profile.id]}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => handleSaveSelectors(profile.id)}
+                              disabled={selectorSaving[profile.id]}
+                              className="ml-auto px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {selectorSaving[profile.id] ? "Saving..." : "Save Changes"}
+                            </button>
+                          </div>
+                        </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>

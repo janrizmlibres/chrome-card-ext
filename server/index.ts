@@ -64,6 +64,55 @@ const sortCardsByUsage = (cards: Card[]) => {
   });
 };
 
+type SelectorFieldKey =
+  | "cardNumberSelectors"
+  | "cardExpirySelectors"
+  | "cvvSelectors"
+  | "address1Selectors"
+  | "address2Selectors"
+  | "citySelectors"
+  | "stateSelectors"
+  | "zipSelectors"
+  | "phoneSelectors"
+  | "nameSelectors";
+
+const SELECTOR_DB_FIELDS: Record<SelectorFieldKey, string> = {
+  cardNumberSelectors: "cardnumberselectors",
+  cardExpirySelectors: "cardexpiryselectors",
+  cvvSelectors: "cvvselectors",
+  address1Selectors: "address1selectors",
+  address2Selectors: "address2selectors",
+  citySelectors: "cityselectors",
+  stateSelectors: "stateselectors",
+  zipSelectors: "zipselectors",
+  phoneSelectors: "phoneselectors",
+  nameSelectors: "nameselectors",
+};
+
+const mapDbRowToSelectorProfile = (row: any): SelectorProfile => ({
+  id: row.id,
+  domain: row.domain,
+  user_id: row.user_id,
+  cardNumberSelectors: row.cardnumberselectors || [],
+  cardExpirySelectors: row.cardexpiryselectors || [],
+  cvvSelectors: row.cvvselectors || [],
+  address1Selectors: row.address1selectors || [],
+  address2Selectors: row.address2selectors || [],
+  citySelectors: row.cityselectors || [],
+  stateSelectors: row.stateselectors || [],
+  zipSelectors: row.zipselectors || [],
+  phoneSelectors: row.phoneselectors || [],
+  nameSelectors: row.nameselectors || [],
+});
+
+const normalizeSelectorList = (value: any): string[] => {
+  const asArray = Array.isArray(value) ? value : [value].filter((v) => v !== undefined);
+  const cleaned = asArray
+    .map((v) => (v == null ? "" : String(v).trim()))
+    .filter((v) => v.length > 0);
+  return Array.from(new Set(cleaned));
+};
+
 const app = express();
 const PORT = 3000;
 
@@ -471,44 +520,14 @@ app.get("/api/selectorProfiles", async (req, res) => {
 
     if (!data) return res.json(null);
 
-    // Map DB (lowercase) to Frontend (camelCase)
-    const profile = {
-      id: data.id,
-      domain: data.domain,
-      user_id: data.user_id,
-      cardNumberSelectors: data.cardnumberselectors || [],
-      cardExpirySelectors: data.cardexpiryselectors || [],
-      cvvSelectors: data.cvvselectors || [],
-      address1Selectors: data.address1selectors || [],
-      address2Selectors: data.address2selectors || [],
-      citySelectors: data.cityselectors || [],
-      stateSelectors: data.stateselectors || [],
-      zipSelectors: data.zipselectors || [],
-      phoneSelectors: data.phoneselectors || [],
-      nameSelectors: data.nameselectors || [],
-    };
-    return res.json(profile);
+    return res.json(mapDbRowToSelectorProfile(data));
   }
 
   // List all profiles when no domain is provided
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
 
-  const profiles: SelectorProfile[] = (data || []).map((p: any) => ({
-    id: p.id,
-    domain: p.domain,
-    user_id: p.user_id,
-    cardNumberSelectors: p.cardnumberselectors || [],
-    cardExpirySelectors: p.cardexpiryselectors || [],
-    cvvSelectors: p.cvvselectors || [],
-    address1Selectors: p.address1selectors || [],
-    address2Selectors: p.address2selectors || [],
-    citySelectors: p.cityselectors || [],
-    stateSelectors: p.stateselectors || [],
-    zipSelectors: p.zipselectors || [],
-    phoneSelectors: p.phoneselectors || [],
-    nameSelectors: p.nameselectors || [],
-  }));
+  const profiles: SelectorProfile[] = (data || []).map(mapDbRowToSelectorProfile);
   res.json(profiles);
 });
 
@@ -520,6 +539,44 @@ app.delete("/api/selectorProfiles/:id", async (req, res) => {
     .eq("id", id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
+});
+
+app.patch("/api/selectorProfiles/:id", async (req, res) => {
+  const { id } = req.params;
+  const { selectors } = req.body || {};
+
+  if (!selectors || typeof selectors !== "object") {
+    return res.status(400).json({ error: "selectors object is required" });
+  }
+
+  try {
+    const updates: Record<string, any> = {};
+
+    (Object.keys(SELECTOR_DB_FIELDS) as SelectorFieldKey[]).forEach((key) => {
+      if (selectors[key] !== undefined) {
+        updates[SELECTOR_DB_FIELDS[key]] = normalizeSelectorList(selectors[key]);
+      }
+    });
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "No selectors to update" });
+    }
+
+    const { data, error } = await supabase
+      .from("selector_profiles")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Profile not found" });
+
+    res.json(mapDbRowToSelectorProfile(data));
+  } catch (e: any) {
+    console.error("[API] Error updating selectors:", e);
+    res.status(500).json({ error: e?.message || "Unexpected error" });
+  }
 });
 
 // POST /api/selectorProfiles
