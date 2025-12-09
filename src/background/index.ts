@@ -1,4 +1,5 @@
 import { User } from '../lib/types';
+import { networkWatcherMain } from '../content/networkWatcherInjected';
 
 // Background script
 
@@ -179,7 +180,7 @@ chrome.commands.onCommand.addListener((command) => {
 });
 
 // Listen for messages from popup or content script
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[Background] Received message:', message.type);
   
   if (message.type === 'GET_CARDS') {
@@ -349,6 +350,37 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             .catch((err) => sendResponse({ error: err?.message || 'Failed to load network profile' }));
         return true;
     }
+
+  if (message.type === 'INJECT_NETWORK_WATCHER') {
+      const tabId = sender.tab?.id;
+      const rules = message.payload?.rules;
+
+      if (tabId === undefined) {
+          sendResponse({ ok: false, error: 'No tab available for injection' });
+          return;
+      }
+
+      if (!Array.isArray(rules) || rules.length === 0) {
+          sendResponse({ ok: false, error: 'No network rules to inject' });
+          return;
+      }
+
+      chrome.scripting
+          .executeScript({
+              target: { tabId },
+              world: 'MAIN',
+              func: networkWatcherMain,
+              args: [rules],
+          })
+          .then(() => sendResponse({ ok: true }))
+          .catch((err) =>
+              sendResponse({
+                  ok: false,
+                  error: err?.message || 'Failed to inject network watcher',
+              })
+          );
+      return true;
+  }
 });
 
 type CardCandidate = { last4: string; selector: string; text?: string };
