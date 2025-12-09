@@ -624,6 +624,9 @@ app.post("/api/selectorProfiles", async (req, res) => {
   );
 
   try {
+    const userIdForProfile =
+      typeof userId === "string" && userId.trim() ? userId : null;
+
     // 1. Check if profile exists
     let { data: profile, error: findError } = await supabase
       .from("selector_profiles")
@@ -641,7 +644,7 @@ app.post("/api/selectorProfiles", async (req, res) => {
       // Use lowercase keys for DB insert
       const newProfilePayload = {
         domain,
-        user_id: userId,
+        user_id: userIdForProfile,
         cardnumberselectors: [],
         cardexpiryselectors: [],
         cvvselectors: [],
@@ -669,6 +672,9 @@ app.post("/api/selectorProfiles", async (req, res) => {
 
     // Update arrays
     const updates: any = {};
+    if (userIdForProfile) {
+      updates.user_id = userIdForProfile;
+    }
     // Use lowercase keys from DB profile
     const currentCardNumber = profile.cardnumberselectors || [];
     const currentCardExpiry = profile.cardexpiryselectors || [];
