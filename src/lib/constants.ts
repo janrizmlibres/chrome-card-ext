@@ -14,8 +14,3 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 // Auth Storage Keys
 export const AUTH_STORAGE_KEY = 'slash_vault_auth';
 export const USER_STORAGE_KEY = 'slash_vault_user';
-
-// Slash group configuration
-export const SLASH_GROUP_ID_PREFIX = 'group-';
-export const SLASH_GROUP_ID_RANDOM_BYTES = 6;
-

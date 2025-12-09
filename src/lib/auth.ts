@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { User } from './types';
-import { SLASH_GROUP_ID_PREFIX, SLASH_GROUP_ID_RANDOM_BYTES } from './constants';
+import { API_BASE_URL } from './constants';
 
 export interface AuthSession {
   user: User | null;
@@ -26,12 +26,26 @@ function notifyAuthListeners(user: User | null) {
   authListeners.forEach(listener => listener(user));
 }
 
-function generateSlashGroupId(): string {
-  const randomBytes = crypto.getRandomValues(new Uint8Array(SLASH_GROUP_ID_RANDOM_BYTES));
-  const suffix = Array.from(randomBytes)
-    .map(byte => byte.toString(16).padStart(2, '0'))
-    .join('');
-  return `${SLASH_GROUP_ID_PREFIX}${suffix}`;
+async function createSlashGroup(name: string): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/api/slash/card-groups`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(
+      `Failed to create Slash group (${response.status}): ${errorText || response.statusText}`
+    );
+  }
+
+  const body = await response.json();
+  if (!body?.id) {
+    throw new Error('Slash group id missing from Slash API response');
+  }
+
+  return body.id as string;
 }
 
 async function fetchUserProfileWithRetry(userId: string, attempts = 3, delayMs = 200) {
@@ -235,7 +249,7 @@ export async function signIn(email: string, password: string) {
 
 /**
  * Sign up with email and password
- * Note: New users receive a randomly generated slash_group_id
+ * Note: New users receive a Slash-created slash_group_id
  */
 export async function signUp(email: string, password: string) {
   try {
@@ -254,7 +268,8 @@ export async function signUp(email: string, password: string) {
     console.log('[signUp] User created successfully');
     
     const profile = await fetchUserProfileWithRetry(data.user.id);
-    const slashGroupId = generateSlashGroupId();
+    const resolvedEmail = profile?.email || data.user.email || email;
+    const slashGroupId = await createSlashGroup(`Vault Group - ${resolvedEmail}`);
 
     if (data.session) {
       const { error: persistError } = await supabase
@@ -263,15 +278,15 @@ export async function signUp(email: string, password: string) {
         .eq('id', data.user.id);
 
       if (persistError) {
-        console.warn('[signUp] Failed to persist generated group ID:', persistError.message || persistError);
+        console.warn('[signUp] Failed to persist Slash group ID:', persistError.message || persistError);
       }
     } else {
-      console.warn('[signUp] No session available to persist generated group ID');
+      console.warn('[signUp] No session available to persist Slash group ID');
     }
 
     const user: User = {
       id: data.user.id,
-      email: profile?.email || data.user.email || email,
+      email: resolvedEmail,
       role: profile?.role || 'user',
       slash_group_id: slashGroupId,
     };

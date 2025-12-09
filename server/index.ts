@@ -7,6 +7,7 @@ import { Card, SelectorProfile, Address, NetworkProfile } from "../src/lib/types
 const SLASH_API_BASE_URL = process.env.SLASH_API_BASE_URL || "https://api.joinslash.com";
 const SLASH_API_KEY = process.env.SLASH_API_KEY || "";
 const SLASH_ACCOUNT_ID = process.env.SLASH_ACCOUNT_ID || "";
+const SLASH_VIRTUAL_ACCOUNT_ID = process.env.SLASH_VIRTUAL_ACCOUNT_ID || "";
 
 const app = express();
 const PORT = 3000;
@@ -29,6 +30,61 @@ app.get("/api/auth/user/:userId", async (req, res) => {
 
   if (error) return res.status(404).json({ error: "User not found" });
   res.json(data);
+});
+
+// POST /api/slash/card-groups - Create a Slash card group for new users
+app.post("/api/slash/card-groups", async (req, res) => {
+  try {
+    const { name, virtualAccountId } = req.body || {};
+
+    if (!name) {
+      return res.status(400).json({ error: "name is required" });
+    }
+
+    if (!SLASH_API_KEY) {
+      console.error("[/api/slash/card-groups] Missing Slash configuration: SLASH_API_KEY");
+      return res.status(500).json({ error: "Slash API is not configured on the server" });
+    }
+
+    const requestBody: Record<string, any> = { name };
+    const resolvedVirtualAccountId = virtualAccountId || SLASH_VIRTUAL_ACCOUNT_ID;
+    if (resolvedVirtualAccountId) {
+      requestBody.virtualAccountId = resolvedVirtualAccountId;
+    }
+
+    const slashResponse = await fetch(`${SLASH_API_BASE_URL}/card-group`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": SLASH_API_KEY,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!slashResponse.ok) {
+      const errorText = await slashResponse.text().catch(() => "");
+      console.error(
+        "[/api/slash/card-groups] Slash API error:",
+        slashResponse.status,
+        slashResponse.statusText,
+        errorText
+      );
+      return res.status(502).json({
+        error: "Failed to create Slash card group",
+        status: slashResponse.status,
+      });
+    }
+
+    const slashGroup = await slashResponse.json();
+    res.json({
+      id: slashGroup.id,
+      name: slashGroup.name,
+      virtualAccountId: slashGroup.virtualAccountId || resolvedVirtualAccountId || null,
+    });
+  } catch (e: any) {
+    console.error("[/api/slash/card-groups] Unexpected error:", e);
+    res.status(500).json({ error: e?.message || "Unexpected error" });
+  }
 });
 
 // --- Routes ---
