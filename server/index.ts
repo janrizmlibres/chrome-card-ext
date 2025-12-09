@@ -886,11 +886,20 @@ app.post("/api/addresses/import", async (req, res) => {
     return res.status(400).json({ error: "addresses array is required" });
   }
 
+  const hasMissingId = addresses.some(
+    (a: any) => typeof a.id !== "string" || !a.id.trim()
+  );
+
+  if (hasMissingId) {
+    return res.status(400).json({ error: "id is required for all addresses" });
+  }
+
   // Basic validation
   const sanitized = addresses
     .map((a: any) => {
       const cleanId = typeof a.id === "string" ? a.id.trim() : "";
       const record: Record<string, any> = {
+        id: cleanId,
         address1: (a.address1 || "").trim(),
         address2: (a.address2 || "").trim() || null,
         city: (a.city || "").trim(),
@@ -901,14 +910,11 @@ app.post("/api/addresses/import", async (req, res) => {
         created_by: userId || null,
       };
 
-      if (cleanId) {
-        record.id = cleanId;
-      }
-
       return record;
     })
     .filter(
       (a: any) =>
+        a.id &&
         a.address1 &&
         a.city &&
         a.state &&

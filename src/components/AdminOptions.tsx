@@ -278,7 +278,7 @@ export function AdminOptions({ user }: AdminOptionsProps) {
 
   const parseAddressRows = (text: string) => {
     const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l);
-    if (lines.length === 0) return [];
+    if (lines.length === 0) return { rows: [], error: "No data provided" };
 
     const delimiter = lines[0].includes("\t") ? "\t" : ",";
     const headers = lines[0].split(delimiter).map(normalizeHeader);
@@ -308,14 +308,18 @@ export function AdminOptions({ user }: AdminOptionsProps) {
     const colFirst = idx(["aila", "first name", "first"]);
     const colLast = idx(["dawson", "last name", "last"]);
 
-    const requiredCols = [colAddress1, colCity, colState, colFirst, colLast];
-    if (requiredCols.some((c) => c === -1)) return [];
+    const requiredCols = [colId, colAddress1, colCity, colState, colFirst, colLast];
+    if (requiredCols.some((c) => c === -1)) {
+      return { rows: [], error: "Missing required columns. Ensure 'id', 'Address 1', 'City', 'State', and name columns exist." };
+    }
 
     const rows = lines.slice(1).map((line) => line.split(delimiter));
+    let missingIdCount = 0;
 
-    return rows
+    const parsedRows = rows
       .map((cols) => {
         const id = colId >= 0 ? (cols[colId] || "").trim() : "";
+        if (!id) missingIdCount += 1;
         const first = (cols[colFirst] || "").trim();
         const last = (cols[colLast] || "").trim();
         const name = [first, last].filter(Boolean).join(" ").trim();
@@ -330,19 +334,38 @@ export function AdminOptions({ user }: AdminOptionsProps) {
           name,
         };
       })
-      .filter((r) => r.address1 && r.city && r.state && r.name);
+      .filter((r) => r.id && r.address1 && r.city && r.state && r.name);
+
+    if (parsedRows.length === 0) {
+      return {
+        rows: [],
+        error: missingIdCount > 0 ? "No valid rows found. Each row must have an ID." : "No valid rows found. Check headers and data.",
+      };
+    }
+
+    if (missingIdCount > 0) {
+      return {
+        rows: parsedRows,
+        error: "Some rows were skipped because ID was missing.",
+      };
+    }
+
+    return { rows: parsedRows, error: null };
   };
 
   const handleImport = async () => {
     setImportStatus(null);
     setImportCount(null);
-    const parsed = parseAddressRows(importText);
-    if (parsed.length === 0) {
-      setImportStatus("No valid rows found. Check headers and data.");
+    const { rows, error: parseError } = parseAddressRows(importText);
+    if (parseError) {
+      setImportStatus(parseError);
+    }
+    if (!rows || rows.length === 0) {
+      setImportCount(null);
       return;
     }
 
-    await handleImportParsed(parsed, "pasted data");
+    await handleImportParsed(rows, "pasted data");
   };
 
   const handleImportParsed = async (parsed: any[], label: string) => {
@@ -389,12 +412,15 @@ export function AdminOptions({ user }: AdminOptionsProps) {
     setImportFileName(file.name);
     const text = await file.text();
     setImportText(text);
-    const parsed = parseAddressRows(text);
-    if (parsed.length === 0) {
-      setImportStatus("No valid rows found. Check headers and data.");
+    const { rows, error: parseError } = parseAddressRows(text);
+    if (parseError) {
+      setImportStatus(parseError);
+    }
+    if (!rows || rows.length === 0) {
+      setImportCount(null);
       return;
     }
-    await handleImportParsed(parsed, `file: ${file.name}`);
+    await handleImportParsed(rows, `file: ${file.name}`);
   };
 
   const handleNetworkInputChange = (field: string, value: string) => {
@@ -766,7 +792,7 @@ export function AdminOptions({ user }: AdminOptionsProps) {
             )}
           </div>
           <p className="text-xs text-gray-500">
-            Expected headers: (optional) ID, Address 1, Address 2, City, State, Zip, Phone, Aila (First Name), Dawson (Last Name)
+            Required headers: ID, Address 1, City, State, Aila (First Name), Dawson (Last Name). Optional: Address 2, Zip, Phone.
           </p>
           <div className="flex items-center gap-3 text-sm">
             <label className="cursor-pointer px-3 py-1.5 bg-white border rounded-lg hover:bg-gray-50 transition-colors">
