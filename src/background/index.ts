@@ -114,7 +114,8 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
                         await markAutofillUsed(
                             resp.cardFilled ? resp.cardId : null,
                             resp.addressFilled ? resp.addressId : null,
-                            'next'
+                            'next',
+                            userId
                         );
                     }
                 }
@@ -143,7 +144,8 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
                 await markAutofillUsed(
                     resp.cardFilled ? resp.cardId : null,
                     resp.addressFilled ? resp.addressId : null,
-                    'next'
+                    'next',
+                    userId
                 );
             }
 
@@ -277,8 +279,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'MARK_USED') {
-      const { cardId, addressId, context } = message.payload || {};
-      markAutofillUsed(cardId, addressId, context)
+      const { cardId, addressId, context, userId } = message.payload || {};
+      markAutofillUsed(cardId, addressId, context, userId)
         .then(() => sendResponse({ success: true }))
         .catch((err) => {
           console.error(err);
@@ -294,7 +296,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'AUTOFILL_CARD') {
-    const { cardId, addressId, address: addressPayload, role, groupId } = message.payload || {};
+    const { cardId, addressId, address: addressPayload, role, groupId, userId } = message.payload || {};
     
     (async () => {
         try {
@@ -337,7 +339,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 await markAutofillUsed(
                     resp.cardFilled ? resp.cardId : null,
                     resp.addressFilled ? resp.addressId : null,
-                    'card_tile'
+                    'card_tile',
+                    userId
                 );
             }
 
@@ -480,7 +483,12 @@ function fetchDetectedName(tabId: number): Promise<string | null> {
     });
 }
 
-async function markAutofillUsed(cardId?: string | null, addressId?: string | null, context?: string): Promise<void> {
+async function markAutofillUsed(
+    cardId?: string | null,
+    addressId?: string | null,
+    context?: string,
+    userId?: string | null
+): Promise<void> {
     try {
         await fetch('http://localhost:3000/api/autofill/mark_used', {
             method: 'POST',
@@ -489,6 +497,7 @@ async function markAutofillUsed(cardId?: string | null, addressId?: string | nul
                 cardId: cardId ?? null,
                 addressId: addressId ?? null,
                 context: context ?? null,
+                userId: userId ?? null,
             }),
         });
     } catch (err) {

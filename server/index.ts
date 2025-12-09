@@ -401,7 +401,7 @@ app.get("/api/cards/:id/full", async (req, res) => {
 
 // POST /api/autofill/mark_used - unified usage tracking for cards and addresses
 app.post("/api/autofill/mark_used", async (req, res) => {
-  const { cardId, addressId, context } = req.body || {};
+  const { cardId, addressId, context, userId } = req.body || {};
 
   try {
     // Fetch global settings (cooldown interval in minutes)
@@ -489,6 +489,7 @@ app.post("/api/autofill/mark_used", async (req, res) => {
 
     // Record audit log with both card and address references when provided
     const { error: auditError } = await supabase.from("audit_logs").insert({
+      user_id: userId || null,
       card_id: cardId || null,
       address_id: addressId || null,
       action: "autofill",

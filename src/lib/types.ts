@@ -58,6 +58,7 @@ export interface NetworkProfile {
 
 export interface AuditLog {
   id: string;
+  user_id: string | null;
   card_id: string | null;
   address_id: string | null;
   action: string;
