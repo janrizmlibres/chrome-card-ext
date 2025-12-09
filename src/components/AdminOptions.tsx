@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { User } from "../lib/types";
+import { User, SelectorProfile, NetworkProfile } from "../lib/types";
 import { Trash2, Clock, Globe } from "lucide-react";
-import { SelectorProfile } from "../lib/types";
 
 interface AdminOptionsProps {
   user: User;
@@ -17,6 +16,16 @@ export function AdminOptions({ user }: AdminOptionsProps) {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importCount, setImportCount] = useState<number | null>(null);
   const [importFileName, setImportFileName] = useState<string | null>(null);
+  const [networkProfiles, setNetworkProfiles] = useState<NetworkProfile[]>([]);
+  const [networkStatus, setNetworkStatus] = useState<string | null>(null);
+  const [networkForm, setNetworkForm] = useState({
+    domain: "",
+    urlPattern: "",
+    method: "GET",
+    namePath: "",
+    firstNamePath: "",
+    lastNamePath: "",
+  });
 
   useEffect(() => {
     loadData();
@@ -41,7 +50,16 @@ export function AdminOptions({ user }: AdminOptionsProps) {
       .then((data) => {
         if (data.cooldownInterval !== undefined) setCooldown(data.cooldownInterval);
       })
+      .catch((err) => console.error(err))
       .finally(() => setLoading(false));
+
+    fetch("http://localhost:3000/api/networkProfiles")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) setNetworkProfiles(data);
+        else if (data) setNetworkProfiles([data]);
+      })
+      .catch((err) => console.error(err));
   };
 
   const handleDeleteProfile = async (id: string) => {
@@ -207,6 +225,74 @@ export function AdminOptions({ user }: AdminOptionsProps) {
     await handleImportParsed(parsed, `file: ${file.name}`);
   };
 
+  const handleNetworkInputChange = (field: string, value: string) => {
+    setNetworkForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSaveNetworkProfile = async () => {
+    setNetworkStatus(null);
+    const domain = networkForm.domain.trim();
+    const urlPattern = networkForm.urlPattern.trim();
+    if (!domain || !urlPattern) {
+      setNetworkStatus("Domain and URL pattern are required");
+      return;
+    }
+
+    const rules = [
+      {
+        urlPattern,
+        method: (networkForm.method || "").trim() || undefined,
+        namePath: networkForm.namePath.trim() || undefined,
+        firstNamePath: networkForm.firstNamePath.trim() || undefined,
+        lastNamePath: networkForm.lastNamePath.trim() || undefined,
+      },
+    ];
+
+    try {
+      const res = await fetch("http://localhost:3000/api/networkProfiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domain,
+          userId: user.id,
+          rules,
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.error) {
+        setNetworkStatus(data?.error || "Save failed");
+        return;
+      }
+
+      setNetworkProfiles((prev) => {
+        const filtered = prev.filter((p) => p.id !== data.id);
+        return [data as NetworkProfile, ...filtered];
+      });
+      setNetworkStatus("Saved");
+    } catch (err: any) {
+      console.error(err);
+      setNetworkStatus(err?.message || "Save failed");
+    }
+  };
+
+  const handleDeleteNetworkProfile = async (id: string) => {
+    if (!confirm("Delete this network profile?")) return;
+    try {
+      const res = await fetch(`http://localhost:3000/api/networkProfiles/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setNetworkProfiles((prev) => prev.filter((p) => p.id !== id));
+      } else {
+        setNetworkStatus("Delete failed");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setNetworkStatus(err?.message || "Delete failed");
+    }
+  };
+
   return (
     <div className="h-full flex flex-col overflow-hidden bg-gray-50">
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -289,6 +375,130 @@ export function AdminOptions({ user }: AdminOptionsProps) {
               ))}
             </div>
           )}
+        </section>
+
+        {/* Network Profiles */}
+        <section className="bg-white p-4 rounded-xl border shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+              <Globe className="w-4 h-4 text-indigo-600" />
+              Network Name Detection
+            </h3>
+            {networkStatus && (
+              <span className="text-xs px-2 py-1 rounded bg-indigo-50 text-indigo-700 font-medium">
+                {networkStatus}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="space-y-1">
+              <label className="text-gray-600 text-xs">Domain</label>
+              <input
+                value={networkForm.domain}
+                onChange={(e) => handleNetworkInputChange("domain", e.target.value)}
+                placeholder="example.com"
+                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-gray-600 text-xs">HTTP Method (optional)</label>
+              <input
+                value={networkForm.method}
+                onChange={(e) => handleNetworkInputChange("method", e.target.value.toUpperCase())}
+                placeholder="GET"
+                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-gray-600 text-xs">URL Pattern (substring or /regex/)</label>
+              <input
+                value={networkForm.urlPattern}
+                onChange={(e) => handleNetworkInputChange("urlPattern", e.target.value)}
+                placeholder="/api/profile"
+                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-gray-600 text-xs">Full Name Path</label>
+              <input
+                value={networkForm.namePath}
+                onChange={(e) => handleNetworkInputChange("namePath", e.target.value)}
+                placeholder="data.profile.full_name"
+                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-gray-600 text-xs">First Name Path</label>
+              <input
+                value={networkForm.firstNamePath}
+                onChange={(e) => handleNetworkInputChange("firstNamePath", e.target.value)}
+                placeholder="data.profile.first_name"
+                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-gray-600 text-xs">Last Name Path</label>
+              <input
+                value={networkForm.lastNamePath}
+                onChange={(e) => handleNetworkInputChange("lastNamePath", e.target.value)}
+                placeholder="data.profile.last_name"
+                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              onClick={handleSaveNetworkProfile}
+              className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              Save Network Profile
+            </button>
+          </div>
+
+          <div className="border-t pt-3">
+            {networkProfiles.length === 0 ? (
+              <div className="text-center text-sm text-gray-500 py-4">
+                No network profiles configured yet.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {networkProfiles.map((profile) => {
+                  const firstRule = Array.isArray(profile.rules) ? profile.rules[0] : null;
+                  return (
+                    <div
+                      key={profile.id}
+                      className="flex items-start justify-between border rounded-lg p-3 hover:bg-gray-50"
+                    >
+                      <div className="space-y-1">
+                        <div className="font-medium text-gray-800">{profile.domain}</div>
+                        {firstRule && (
+                          <div className="text-xs text-gray-600 space-y-0.5">
+                            <div>URL: {firstRule.urlPattern}</div>
+                            {firstRule.method && <div>Method: {firstRule.method}</div>}
+                            {firstRule.namePath && <div>Name: {firstRule.namePath}</div>}
+                            {(firstRule.firstNamePath || firstRule.lastNamePath) && (
+                              <div>
+                                Parts: {[firstRule.firstNamePath, firstRule.lastNamePath].filter(Boolean).join(", ")}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDeleteNetworkProfile(profile.id)}
+                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title="Delete Network Profile"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </section>
 
         {/* Address Import */}

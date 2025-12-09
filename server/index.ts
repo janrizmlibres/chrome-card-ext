@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { supabase } from "./supabase";
-import { Card, SelectorProfile, Address } from "../src/lib/types";
+import { Card, SelectorProfile, Address, NetworkProfile } from "../src/lib/types";
 
 const app = express();
 const PORT = 3000;
@@ -438,6 +438,98 @@ app.post("/api/selectorProfiles", async (req, res) => {
     console.error("[API] Unexpected error:", e);
     res.status(500).json({ error: e.message });
   }
+});
+
+// --- Network Profiles API (name detection) ---
+
+const formatNetworkProfile = (row: any): NetworkProfile => ({
+  id: row.id,
+  domain: row.domain,
+  user_id: row.user_id,
+  rules: row.rules || [],
+  created_at: row.created_at,
+});
+
+app.get("/api/networkProfiles", async (req, res) => {
+  const { domain } = req.query;
+  let query = supabase.from("network_profiles").select("*");
+
+  if (domain) {
+    const { data, error } = await query
+      .eq("domain", domain)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+      return res.status(500).json({ error: error.message });
+    }
+
+    if (!data) return res.json(null);
+    return res.json(formatNetworkProfile(data));
+  }
+
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  const profiles = (data || []).map(formatNetworkProfile);
+  res.json(profiles);
+});
+
+app.post("/api/networkProfiles", async (req, res) => {
+  const { domain, userId, rules } = req.body || {};
+
+  if (!domain || !Array.isArray(rules)) {
+    return res.status(400).json({ error: "domain and rules are required" });
+  }
+
+  try {
+    const { data: existing, error: findError } = await supabase
+      .from("network_profiles")
+      .select("*")
+      .eq("domain", domain)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (findError && findError.code !== "PGRST116") {
+      return res.status(500).json({ error: findError.message });
+    }
+
+    if (!existing) {
+      const { data, error } = await supabase
+        .from("network_profiles")
+        .insert({
+          domain,
+          user_id: userId,
+          rules,
+        })
+        .select()
+        .single();
+
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(formatNetworkProfile(data));
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from("network_profiles")
+      .update({ rules, user_id: userId || existing.user_id })
+      .eq("id", existing.id)
+      .select()
+      .single();
+
+    if (updateError) return res.status(500).json({ error: updateError.message });
+    return res.json(formatNetworkProfile(updated));
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || "Unexpected error" });
+  }
+});
+
+app.delete("/api/networkProfiles/:id", async (req, res) => {
+  const { id } = req.params;
+  const { error } = await supabase.from("network_profiles").delete().eq("id", id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
 });
 
 // --- Addresses API ---

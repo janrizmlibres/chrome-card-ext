@@ -133,4 +133,4 @@ Thumbs.db
 *.sw?
 
 PROJECT.md
-schema.sql
+*.sql

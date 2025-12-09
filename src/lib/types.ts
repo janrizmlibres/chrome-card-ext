@@ -40,6 +40,23 @@ export interface SelectorProfile {
   nameSelectors: string[];
 }
 
+export interface NetworkRule {
+  urlPattern: string; // substring or /regex/ string to match requests
+  method?: string; // optional HTTP method filter
+  namePath?: string; // dot-path to full name
+  firstNamePath?: string; // dot-path to first name
+  lastNamePath?: string; // dot-path to last name
+  fullNameTemplate?: string; // optional template like "{first} {last}"
+}
+
+export interface NetworkProfile {
+  id: string;
+  domain: string;
+  user_id: string;
+  rules: NetworkRule[];
+  created_at: string;
+}
+
 export interface AuditLog {
   id: string;
   card_id: string | null;

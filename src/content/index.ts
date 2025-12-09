@@ -1,8 +1,14 @@
+import { NetworkRule } from '../lib/types';
+
 // Content script
 
 console.log('Slash Card Manager content script loaded');
 
 let lastClickedElement: HTMLElement | null = null;
+let latestDetectedName: string | null = null;
+let injectedNetworkWatcher = false;
+initializeNetworkDetection();
+window.addEventListener('message', handleDetectedNameMessage);
 
 document.addEventListener('contextmenu', (event) => {
   lastClickedElement = event.target as HTMLElement;
@@ -32,6 +38,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse?.({ candidates });
   }
 
+  if (message.type === 'GET_DETECTED_NAME') {
+      sendResponse?.({ name: latestDetectedName });
+  }
+
   if (message.type === 'FILL_FOR_CONTEXT') {
       fillCombined({
           card: message.card,
@@ -47,6 +57,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           card: message.card,
           address: message.address,
           contextSelector: message.contextSelector,
+          detectedName: message.detectedName ?? null,
           sendResponse,
       });
       return true; // async response
@@ -118,14 +129,6 @@ function getCssSelector(el: HTMLElement): string {
   return el.tagName.toLowerCase();
 }
 
-function fillFields(card: any) {
-    fillCombined({
-        card,
-        address: null,
-        contextSelector: null,
-    });
-}
-
 function fillInput(selectors: string[] | undefined, value: string): boolean {
     if (!selectors) return false;
     let filledAny = false;
@@ -161,6 +164,7 @@ type FillCombinedParams = {
     address?: any;
     contextSelector?: string | null;
     sendResponse?: (resp: any) => void;
+    detectedName?: string | null;
 };
 
 function fillCardFields(profile: any, card: any, fillStrategy: (selectors: string[] | undefined, value: string) => boolean): boolean {
@@ -214,7 +218,7 @@ function fillAddressFields(profile: any, address: any, fillStrategy: (selectors:
     return filled;
 }
 
-function fillCombined({ card, address, contextSelector, sendResponse }: FillCombinedParams) {
+function fillCombined({ card, address, contextSelector, sendResponse, detectedName }: FillCombinedParams) {
     const cardId = card?.id ?? null;
     const addressId = address?.id ?? null;
 
@@ -250,6 +254,16 @@ function fillCombined({ card, address, contextSelector, sendResponse }: FillComb
 
             const profile = response.profile;
 
+            let addressToUse = address ? { ...address } : null;
+            const nameToUse = detectedName ?? latestDetectedName ?? addressToUse?.name ?? null;
+            if (nameToUse) {
+                if (addressToUse) {
+                    addressToUse.name = nameToUse;
+                } else {
+                    addressToUse = { name: nameToUse };
+                }
+            }
+
             let contextEl: HTMLElement | null = null;
             if (contextSelector) {
                 contextEl = document.querySelector(contextSelector) as HTMLElement | null;
@@ -272,7 +286,7 @@ function fillCombined({ card, address, contextSelector, sendResponse }: FillComb
                 : (selectors: string[] | undefined, value: string) => fillInput(selectors, value);
 
             const cardFilled = fillCardFields(profile, card, fillStrategy);
-            const addressFilled = fillAddressFields(profile, address, fillStrategy);
+            const addressFilled = fillAddressFields(profile, addressToUse, fillStrategy);
 
             sendResponse?.({
                 success: cardFilled || addressFilled,
@@ -409,11 +423,184 @@ function collectElements(selectors?: string[]): HTMLElement[] {
     return out;
 }
 
-function fillForContext(card: any, contextSelector: string, sendResponse?: (resp: any) => void) {
-    fillCombined({
-        card,
-        address: null,
-        contextSelector,
-        sendResponse,
-    });
+function handleDetectedNameMessage(event: MessageEvent) {
+    if (event.source !== window) return;
+    const data: any = (event as any).data;
+    if (!data || data.type !== 'SLASH_NAME_DETECTED') return;
+    if (typeof data.name === 'string' && data.name.trim()) {
+        latestDetectedName = data.name.trim();
+    }
+}
+
+function initializeNetworkDetection() {
+    const domain = window.location.hostname;
+    chrome.runtime.sendMessage(
+        { type: 'GET_NETWORK_PROFILE', payload: { domain } },
+        (response) => {
+            if (chrome.runtime.lastError) {
+                return;
+            }
+            const profile = response?.profile ?? response;
+            const rules: NetworkRule[] = (profile?.rules as NetworkRule[]) || [];
+            if (!Array.isArray(rules) || rules.length === 0) return;
+            injectNetworkWatcher(rules);
+        }
+    );
+}
+
+function injectNetworkWatcher(rules: NetworkRule[]) {
+    if (injectedNetworkWatcher || !rules || rules.length === 0) return;
+    injectedNetworkWatcher = true;
+    const script = document.createElement('script');
+    script.textContent = `(${networkWatcher.toString()})(${JSON.stringify(rules)});`;
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+}
+
+function networkWatcher(rules: any[]) {
+    if (!Array.isArray(rules) || rules.length === 0) return;
+
+    let lastName: string | null = null;
+
+    const normalize = (value: any) => {
+        if (typeof value === 'string') return value.trim();
+        if (value === null || value === undefined) return '';
+        return String(value).trim();
+    };
+
+    const postName = (name: any) => {
+        const trimmed = normalize(name);
+        if (!trimmed) return;
+        if (lastName === trimmed) return;
+        lastName = trimmed;
+        window.postMessage({ type: 'SLASH_NAME_DETECTED', name: trimmed }, '*');
+    };
+
+    const matchesRule = (rule: any, url: string, method: string) => {
+        if (!rule || !rule.urlPattern) return false;
+        const targetMethod = (rule.method || '').toString().toUpperCase();
+        if (targetMethod && targetMethod !== method.toUpperCase()) return false;
+
+        const pattern = rule.urlPattern;
+        if (typeof pattern !== 'string') return false;
+
+        if (pattern.startsWith('/') && pattern.endsWith('/') && pattern.length >= 2) {
+            try {
+                const regex = new RegExp(pattern.slice(1, -1));
+                return regex.test(url);
+            } catch (_e) {
+                // fall back to substring
+            }
+        }
+
+        return url.includes(pattern);
+    };
+
+    const getPath = (obj: any, path: string | undefined | null) => {
+        if (!obj || !path || typeof path !== 'string') return null;
+        return path
+            .split('.')
+            .map((p) => p.trim())
+            .filter(Boolean)
+            .reduce((acc, key) => {
+                if (acc && typeof acc === 'object' && key in acc) {
+                    return (acc as any)[key];
+                }
+                return undefined;
+            }, obj as any);
+    };
+
+    const extractName = (data: any, rule: any) => {
+        const full = normalize(getPath(data, rule.namePath));
+        const first = normalize(getPath(data, rule.firstNamePath));
+        const last = normalize(getPath(data, rule.lastNamePath));
+
+        if (full) return full;
+        if (first || last) return [first, last].filter(Boolean).join(' ').trim();
+        if (rule.fullNameTemplate && typeof rule.fullNameTemplate === 'string') {
+            return rule.fullNameTemplate
+                .replace(/\{first\}/g, first)
+                .replace(/\{last\}/g, last)
+                .trim();
+        }
+        return '';
+    };
+
+    const handleJson = (data: any, url: string, method: string) => {
+        if (!data || typeof data !== 'object') return;
+        for (const rule of rules) {
+            if (!matchesRule(rule, url, method)) continue;
+            const name = extractName(data, rule);
+            if (name) {
+                postName(name);
+                break;
+            }
+        }
+    };
+
+    const processResponse = (response: Response, url: string, method: string) => {
+        try {
+            response
+                .clone()
+                .json()
+                .then((data) => handleJson(data, url, method))
+                .catch(() => {});
+        } catch (_e) {
+            // ignore clone/json errors
+        }
+    };
+
+    const originalFetch = window.fetch;
+    window.fetch = async function (...args: any[]) {
+        const res = await originalFetch.apply(this, args as any);
+        try {
+            const input = args[0];
+            const init = args[1] || {};
+            const url = typeof input === 'string' ? input : input?.url || '';
+            const method =
+                (init.method ||
+                    (typeof input === 'object' && input?.method) ||
+                    'GET')?.toString() || 'GET';
+            processResponse(res, url, method.toUpperCase());
+        } catch (_e) {
+            // ignore errors extracting url/method
+        }
+        return res;
+    };
+
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method: any, url: any, _async?: any, _user?: any, _password?: any) {
+        (this as any).__slashMeta = {
+            method: (method || 'GET').toString().toUpperCase(),
+            url: url ? url.toString() : '',
+        };
+        return originalOpen.apply(this, arguments as any);
+    };
+
+    XMLHttpRequest.prototype.send = function (_body?: any) {
+        try {
+            this.addEventListener('load', function () {
+                try {
+                    const meta = (this as any).__slashMeta || { method: 'GET', url: '' };
+                    const url = meta.url || '';
+                    const method = meta.method || 'GET';
+                    const text = (this as any).responseText;
+                    if (!text) return;
+                    try {
+                        const data = JSON.parse(text);
+                        handleJson(data, url, method);
+                    } catch (_parseError) {
+                        // ignore parse errors
+                    }
+                } catch (_inner) {
+                    // ignore
+                }
+            });
+        } catch (_e) {
+            // ignore addEventListener errors
+        }
+        return originalSend.apply(this, arguments as any);
+    };
 }

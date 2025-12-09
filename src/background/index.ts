@@ -75,6 +75,7 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
     (async () => {
         try {
             const tabId = await getActiveTabId();
+            const detectedName = await fetchDetectedName(tabId);
             const candidates = await scanForCardCandidates(tabId);
             const [cards, addresses] = await Promise.all([
                 fetchCards(userId, role, groupId, true),
@@ -104,7 +105,7 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
                         card: fullCard,
                         address: bestAddress,
                         contextSelector: match.selector,
-                    });
+                    }, detectedName);
 
                     responses.push(resp);
 
@@ -134,7 +135,7 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
             const resp = await sendFillCombined(tabId, {
                 card: fullCard,
                 address: bestAddress,
-            });
+            }, detectedName);
             responses.push(resp);
 
             if (resp?.cardFilled || resp?.addressFilled) {
@@ -296,6 +297,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             }
 
             const tabId = await getActiveTabId();
+            const detectedName = await fetchDetectedName(tabId);
             const candidates = await scanForCardCandidates(tabId);
             const contextual = fullCard
                 ? candidates.filter(c => c.last4 === fullCard.last4)
@@ -307,13 +309,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                     card: fullCard,
                     address: addressToUse,
                     contextSelector: contextual[0].selector,
-                });
+                }, detectedName);
                 sendResponse({ success: !!resp?.success, contextual: true });
             } else {
                 resp = await sendFillCombined(tabId, {
                     card: fullCard,
                     address: addressToUse,
-                });
+                }, detectedName);
                 sendResponse({ success: !!resp?.success, contextual: false });
             }
 
@@ -339,6 +341,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         .catch(err => sendResponse({ error: err.message }));
       return true;
   }
+
+    if (message.type === 'GET_NETWORK_PROFILE') {
+        const { domain } = message.payload || {};
+        fetchNetworkProfile(domain)
+            .then((profile) => sendResponse({ profile }))
+            .catch((err) => sendResponse({ error: err?.message || 'Failed to load network profile' }));
+        return true;
+    }
 });
 
 type CardCandidate = { last4: string; selector: string; text?: string };
@@ -399,6 +409,30 @@ async function fetchFullAddress(addressId: string): Promise<any | null> {
         .catch(() => null);
 }
 
+async function fetchNetworkProfile(domain?: string): Promise<any | null> {
+    if (!domain) return null;
+    return fetch(`http://localhost:3000/api/networkProfiles?domain=${encodeURIComponent(domain)}`)
+        .then(res => res.json())
+        .catch(() => null);
+}
+
+function fetchDetectedName(tabId: number): Promise<string | null> {
+    return new Promise((resolve) => {
+        chrome.tabs.sendMessage(tabId, { type: 'GET_DETECTED_NAME' }, (response) => {
+            if (chrome.runtime.lastError) {
+                resolve(null);
+                return;
+            }
+            const name = response?.name;
+            if (typeof name === 'string' && name.trim()) {
+                resolve(name.trim());
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
 async function markAutofillUsed(cardId?: string | null, addressId?: string | null, context?: string): Promise<void> {
     try {
         await fetch('http://localhost:3000/api/autofill/mark_used', {
@@ -433,7 +467,7 @@ function matchCandidatesToCards(candidates: CardCandidate[], cards: any[]): { ca
     return matches;
 }
 
-function sendFillCombined(tabId: number, payload: { card?: any; address?: any; contextSelector?: string | null }): Promise<any> {
+function sendFillCombined(tabId: number, payload: { card?: any; address?: any; contextSelector?: string | null }, detectedName?: string | null): Promise<any> {
     return new Promise((resolve) => {
         chrome.tabs.sendMessage(
             tabId,
@@ -442,6 +476,7 @@ function sendFillCombined(tabId: number, payload: { card?: any; address?: any; c
                 card: payload.card ?? null,
                 address: payload.address ?? null,
                 contextSelector: payload.contextSelector ?? null,
+                detectedName: detectedName ?? null,
             },
             (response) => {
                 if (chrome.runtime.lastError) {
