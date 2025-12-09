@@ -312,24 +312,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const tabId = await getActiveTabId();
             const detectedName = await fetchDetectedName(tabId);
             const candidates = await scanForCardCandidates(tabId);
-            const contextual = fullCard
+            const contextualMatches = fullCard
                 ? candidates.filter(c => c.last4 === fullCard.last4)
                 : [];
 
             let resp;
-            if (contextual.length === 1) {
+            let wasContextual = false;
+
+            if (contextualMatches.length === 1) {
+                wasContextual = true;
                 resp = await sendFillCombined(tabId, {
                     card: fullCard,
                     address: addressToUse,
-                    contextSelector: contextual[0].selector,
+                    contextSelector: contextualMatches[0].selector,
                 }, detectedName);
-                sendResponse({ success: !!resp?.success, contextual: true });
             } else {
                 resp = await sendFillCombined(tabId, {
                     card: fullCard,
                     address: addressToUse,
                 }, detectedName);
-                sendResponse({ success: !!resp?.success, contextual: false });
             }
 
             if (resp?.cardFilled || resp?.addressFilled) {
@@ -339,6 +340,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     'card_tile'
                 );
             }
+
+            sendResponse({ success: !!resp?.success, contextual: wasContextual });
         } catch (err: any) {
             sendResponse({ error: err?.message || 'Autofill failed' });
         }
