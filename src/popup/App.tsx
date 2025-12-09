@@ -21,6 +21,10 @@ function App() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [cardDetails, setCardDetails] = useState<
+    Record<string, { cvv?: string | null }>
+  >({});
+  const [cardDetailsLoading, setCardDetailsLoading] = useState<string | null>(null);
 
   const fetchCards = () => {
     console.log('[fetchCards] Starting...');
@@ -132,6 +136,51 @@ function App() {
   });
 
   const hasAutofillCandidates = activeCards.length > 0 || activeAddresses.length > 0;
+
+  const formatExpiry = (month: number | null, year: number | null) => {
+    if (!month || !year) return "—";
+    const mm = month.toString().padStart(2, "0");
+    const yy = year.toString().slice(-2);
+    return `${mm}/${yy}`;
+  };
+
+  const formatDateSafe = (value?: string | null) => {
+    if (!value) return "Unknown";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "Unknown";
+    return parsed.toLocaleDateString();
+  };
+
+  const handleFetchCardDetails = (cardId: string) => {
+    if (!user || cardDetails[cardId]) return;
+    
+    setCardDetailsLoading(cardId);
+    chrome.runtime.sendMessage(
+      {
+        type: "GET_CARD_FULL",
+        payload: { cardId, role: user.role, groupId: user.slash_group_id },
+      },
+      (response) => {
+        setCardDetailsLoading(null);
+
+        if (chrome.runtime.lastError) {
+          console.error("Chrome runtime error:", chrome.runtime.lastError);
+          return;
+        }
+
+        if (response?.card) {
+          setCardDetails((prev) => ({
+            ...prev,
+            [cardId]: {
+              cvv: response.card.cvv ?? null,
+            },
+          }));
+        } else if (response?.error) {
+          console.error("Error fetching card details:", response.error);
+        }
+      }
+    );
+  };
 
   const handleGenerateCard = () => {
     if (!user) return;
@@ -347,6 +396,7 @@ function App() {
                     activeAddresses.length > 0
                       ? activeAddresses[idx % activeAddresses.length]
                       : null;
+                  const cardDetail = cardDetails[card.id];
                   return (
                   <div
                     key={card.id}
@@ -369,12 +419,35 @@ function App() {
                         )}
                     </div>
                     <div className="flex justify-between items-end">
-                      <div className="text-xs text-gray-500 space-y-1">
-                        <div>
-                          Exp: {card.exp_month}/{card.exp_year}
+                      <div className="text-xs text-gray-600 space-y-1">
+                        <div>Exp: {formatExpiry(card.exp_month, card.exp_year)}</div>
+                        <div>Created: {formatDateSafe(card.created_at)}</div>
+                        <div>Owner: {card.created_by_email || "Unknown owner"}</div>
+                        <div>Group: {card.slash_group_id || "—"}</div>
+                        <div className="flex items-center gap-2">
+                          <span>CVV:</span>
+                          {cardDetail?.cvv ? (
+                            <span className="font-semibold tracking-widest text-gray-800">
+                              {cardDetail.cvv}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleFetchCardDetails(card.id)}
+                              disabled={cardDetailsLoading === card.id}
+                              className="text-[11px] text-indigo-600 font-medium hover:text-indigo-800 disabled:opacity-50"
+                            >
+                              {cardDetailsLoading === card.id ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                  Loading
+                                </span>
+                              ) : (
+                                "Show CVV"
+                              )}
+                            </button>
+                          )}
                         </div>
                         <div>Used: {card.usage_count} times</div>
-                        <div className="text-gray-400">Created by: {card.created_by}</div>
                         {pairedAddress ? (
                           <div className="text-gray-600">
                             Address: {pairedAddress.name} — {pairedAddress.city}, {pairedAddress.state} ({pairedAddress.usage_count} uses)

@@ -209,6 +209,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Will respond asynchronously
   }
 
+  if (message.type === 'GET_CARD_FULL') {
+    const { cardId, role, groupId } = message.payload || {};
+
+    fetchFullCard(cardId, role, groupId)
+      .then((card) => sendResponse({ card }))
+      .catch((err) => {
+        console.error('[Background] Error fetching full card:', err);
+        sendResponse({ error: err?.message || 'Failed to fetch card' });
+      });
+    return true;
+  }
+
   if (message.type === 'GET_ADDRESSES') {
     const { activeOnly } = message.payload || {};
     const params = new URLSearchParams();

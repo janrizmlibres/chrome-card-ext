@@ -5,6 +5,7 @@ import { Card, SelectorProfile, Address, NetworkProfile } from "../src/lib/types
 
 // Slash API configuration
 const SLASH_API_BASE_URL = process.env.SLASH_API_BASE_URL || "https://api.joinslash.com";
+const SLASH_API_VAULT_URL = process.env.SLASH_API_VAULT_URL || "https://vault.joinslash.com";
 const SLASH_API_KEY = process.env.SLASH_API_KEY || "";
 const SLASH_ACCOUNT_ID = process.env.SLASH_ACCOUNT_ID || "";
 const SLASH_VIRTUAL_ACCOUNT_ID = process.env.SLASH_VIRTUAL_ACCOUNT_ID || "";
@@ -48,6 +49,38 @@ const mapSlashCardToAppCard = (slashCard: SlashCard): Card => {
     active: (slashCard.status || "").toLowerCase() === "active",
     created_at: slashCard.createdAt || new Date().toISOString(),
   };
+};
+
+const attachCreatorEmails = async (cards: Card[]): Promise<Card[]> => {
+  const ownerIds = Array.from(
+    new Set(cards.map((card) => card.created_by).filter(Boolean))
+  ) as string[];
+
+  if (ownerIds.length === 0) return cards;
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, email")
+    .in("id", ownerIds);
+
+  if (error || !data) {
+    console.warn(
+      "[attachCreatorEmails] Failed to load creator emails:",
+      error?.message || error
+    );
+    return cards;
+  }
+
+  const emailMap = new Map<string, string>(
+    data.map((row: any) => [row.id, row.email])
+  );
+
+  return cards.map((card) => ({
+    ...card,
+    created_by_email: card.created_by
+      ? emailMap.get(card.created_by) || null
+      : null,
+  }));
 };
 
 const sortCardsByUsage = (cards: Card[]) => {
@@ -241,7 +274,8 @@ app.get("/api/cards", async (req, res) => {
     }
 
     cards = sortCardsByUsage(cards);
-    res.json(cards);
+    const withOwners = await attachCreatorEmails(cards);
+    res.json(withOwners);
   } catch (e: any) {
     console.error("[/api/cards] Unexpected error:", e);
     res.status(500).json({ error: e?.message || "Unexpected error" });
@@ -276,7 +310,7 @@ app.post("/api/cards/create", async (req, res) => {
       },
     };
 
-    const slashResponse = await fetch(`${SLASH_API_BASE_URL}/card?include_pan=true`, {
+    const slashResponse = await fetch(`${SLASH_API_BASE_URL}/card`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -326,7 +360,7 @@ app.get("/api/cards/:id/full", async (req, res) => {
 
   try {
     const slashResponse = await fetch(
-      `${SLASH_API_BASE_URL}/card/${encodeURIComponent(id)}?include_pan=true`,
+      `${SLASH_API_VAULT_URL}/card/${encodeURIComponent(id)}?include_pan=true&include_cvv=true`,
       {
         headers: { "X-API-Key": SLASH_API_KEY },
       }
@@ -352,8 +386,10 @@ app.get("/api/cards/:id/full", async (req, res) => {
       return res.status(403).json({ error: "Forbidden" });
     }
 
+    const [appCardWithOwner] = await attachCreatorEmails([appCard]);
+
     res.json({
-      ...appCard,
+      ...(appCardWithOwner || appCard),
       pan: slashCard.pan || null,
       cvv: slashCard.cvv || null,
     });

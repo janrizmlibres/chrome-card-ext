@@ -13,6 +13,7 @@ export interface Card {
   exp_month: number | null;
   exp_year: number | null;
   created_by?: string | null; // User ID (from Slash userData)
+  created_by_email?: string | null; // Owner email for display
   slash_group_id?: string | null;
   labels: string[];
   last_used: string | null; // ISO date string
