@@ -288,6 +288,7 @@ export function AdminOptions({ user }: AdminOptionsProps) {
       return headers.findIndex((h) => set.includes(h));
     };
 
+    const colId = idx(["id"]);
     const colAddress1 = idx([
       "address 1",
       "address1",
@@ -314,10 +315,12 @@ export function AdminOptions({ user }: AdminOptionsProps) {
 
     return rows
       .map((cols) => {
+        const id = colId >= 0 ? (cols[colId] || "").trim() : "";
         const first = (cols[colFirst] || "").trim();
         const last = (cols[colLast] || "").trim();
         const name = [first, last].filter(Boolean).join(" ").trim();
         return {
+          id: id || undefined,
           address1: (cols[colAddress1] || "").trim(),
           address2: colAddress2 >= 0 ? (cols[colAddress2] || "").trim() : "",
           city: (cols[colCity] || "").trim(),
@@ -763,7 +766,7 @@ export function AdminOptions({ user }: AdminOptionsProps) {
             )}
           </div>
           <p className="text-xs text-gray-500">
-            Expected headers: Address 1, Address 2, City, State, Zip, Phone, Aila (First Name), Dawson (Last Name)
+            Expected headers: (optional) ID, Address 1, Address 2, City, State, Zip, Phone, Aila (First Name), Dawson (Last Name)
           </p>
           <div className="flex items-center gap-3 text-sm">
             <label className="cursor-pointer px-3 py-1.5 bg-white border rounded-lg hover:bg-gray-50 transition-colors">

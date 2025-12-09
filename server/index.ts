@@ -888,16 +888,25 @@ app.post("/api/addresses/import", async (req, res) => {
 
   // Basic validation
   const sanitized = addresses
-    .map((a: any) => ({
-      address1: (a.address1 || "").trim(),
-      address2: (a.address2 || "").trim() || null,
-      city: (a.city || "").trim(),
-      state: (a.state || "").trim(),
-      zip: (a.zip || "").trim() || null,
-      phone: (a.phone || "").trim() || null,
-      name: (a.name || "").trim(),
-      created_by: userId || null,
-    }))
+    .map((a: any) => {
+      const cleanId = typeof a.id === "string" ? a.id.trim() : "";
+      const record: Record<string, any> = {
+        address1: (a.address1 || "").trim(),
+        address2: (a.address2 || "").trim() || null,
+        city: (a.city || "").trim(),
+        state: (a.state || "").trim(),
+        zip: (a.zip || "").trim() || null,
+        phone: (a.phone || "").trim() || null,
+        name: (a.name || "").trim(),
+        created_by: userId || null,
+      };
+
+      if (cleanId) {
+        record.id = cleanId;
+      }
+
+      return record;
+    })
     .filter(
       (a: any) =>
         a.address1 &&
@@ -920,7 +929,9 @@ app.post("/api/addresses/import", async (req, res) => {
   (async () => {
     for (let i = 0; i < sanitized.length; i += chunkSize) {
       const chunk = sanitized.slice(i, i + chunkSize);
-      const { error } = await supabase.from("addresses").insert(chunk);
+      const { error } = await supabase
+        .from("addresses")
+        .upsert(chunk, { onConflict: "id" });
       if (error) {
         console.error("[addresses/import] chunk insert error:", error);
         // Continue with remaining chunks to avoid partial blocking
