@@ -9,6 +9,61 @@ const SLASH_API_KEY = process.env.SLASH_API_KEY || "";
 const SLASH_ACCOUNT_ID = process.env.SLASH_ACCOUNT_ID || "";
 const SLASH_VIRTUAL_ACCOUNT_ID = process.env.SLASH_VIRTUAL_ACCOUNT_ID || "";
 
+type SlashCard = {
+  id: string;
+  last4: string;
+  expiryMonth?: string | number;
+  expiryYear?: string | number;
+  status?: string;
+  cardGroupId?: string;
+  createdAt?: string;
+  pan?: string;
+  cvv?: string;
+  userData?: Record<string, any>;
+};
+
+const parseNumber = (value: any): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const n = parseInt(String(value ?? ""), 10);
+  return Number.isNaN(n) ? null : n;
+};
+
+const mapSlashCardToAppCard = (slashCard: SlashCard): Card => {
+  const userData = slashCard.userData || {};
+  const expMonth = parseNumber(slashCard.expiryMonth);
+  const expYear = parseNumber(slashCard.expiryYear);
+  const usageCount = parseNumber(userData.usageCount) ?? 0;
+
+  return {
+    id: slashCard.id,
+    last4: slashCard.last4,
+    exp_month: expMonth,
+    exp_year: expYear,
+    created_by: userData.createdByUserId ?? null,
+    slash_group_id: slashCard.cardGroupId ?? null,
+    labels: Array.isArray(userData.labels) ? userData.labels : [],
+    last_used: userData.lastUsed ?? null,
+    usage_count: usageCount,
+    excluded_until: userData.excludedUntil ?? null,
+    active: (slashCard.status || "").toLowerCase() === "active",
+    created_at: slashCard.createdAt || new Date().toISOString(),
+  };
+};
+
+const sortCardsByUsage = (cards: Card[]) => {
+  return [...cards].sort((a, b) => {
+    // last_used: nulls first, oldest first
+    if (!a.last_used && b.last_used) return -1;
+    if (a.last_used && !b.last_used) return 1;
+    if (a.last_used && b.last_used) {
+      const diff = new Date(a.last_used).getTime() - new Date(b.last_used).getTime();
+      if (diff !== 0) return diff;
+    }
+    // then usage_count ascending
+    return (a.usage_count || 0) - (b.usage_count || 0);
+  });
+};
+
 const app = express();
 const PORT = 3000;
 
@@ -91,34 +146,57 @@ app.post("/api/slash/card-groups", async (req, res) => {
 
 // GET /api/cards - Get cards based on user role and group
 app.get("/api/cards", async (req, res) => {
-  const { activeOnly, userId: _userId, role, groupId } = req.query;
-  const now = new Date().toISOString();
+  try {
+    const { activeOnly, role, groupId } = req.query;
 
-  let query = supabase
-    .from("cards")
-    .select("*")
-    .order("last_used", { ascending: true, nullsFirst: true })
-    .order("usage_count", { ascending: true });
+    if (!SLASH_API_KEY) {
+      console.error("[/api/cards] Missing Slash configuration: SLASH_API_KEY");
+      return res.status(500).json({ error: "Slash API is not configured on the server" });
+    }
 
-  // Role-based filtering
-  if (role === "user" && groupId) {
-    // Regular users can only see cards from their group
-    query = query.eq("slash_group_id", groupId);
+    if (role === "user" && !groupId) {
+      return res.status(400).json({ error: "groupId is required for user role" });
+    }
+
+    const params = new URLSearchParams();
+    if (groupId) params.append("filter:cardGroupId", String(groupId));
+
+    const slashResponse = await fetch(`${SLASH_API_BASE_URL}/card?${params.toString()}`, {
+      headers: {
+        "X-API-Key": SLASH_API_KEY,
+      },
+    });
+
+    if (!slashResponse.ok) {
+      const errorText = await slashResponse.text().catch(() => "");
+      console.error("[/api/cards] Slash API error:", slashResponse.status, slashResponse.statusText, errorText);
+      return res.status(502).json({ error: "Failed to fetch cards from Slash", status: slashResponse.status });
+    }
+
+    const body = await slashResponse.json();
+    const items = Array.isArray(body?.items) ? body.items : [];
+    const now = new Date();
+
+    let cards: Card[] = items.map(mapSlashCardToAppCard);
+
+    if (role === "user" && groupId) {
+      cards = cards.filter((c) => c.slash_group_id === groupId);
+    }
+
+    if (activeOnly === "true") {
+      cards = cards.filter((c) => {
+        const isActive = c.active;
+        const cooldownOk = !c.excluded_until || new Date(c.excluded_until) < now;
+        return isActive && cooldownOk;
+      });
+    }
+
+    cards = sortCardsByUsage(cards);
+    res.json(cards);
+  } catch (e: any) {
+    console.error("[/api/cards] Unexpected error:", e);
+    res.status(500).json({ error: e?.message || "Unexpected error" });
   }
-  // Admins see all cards (no filter needed)
-
-  if (activeOnly === "true") {
-    query = query
-      .eq("active", true)
-      .or(`excluded_until.is.null,excluded_until.lt.${now}`);
-  }
-
-  const { data, error } = await query;
-
-  if (error) return res.status(500).json({ error: error.message });
-
-  const sanitized = ((data as Card[]) || []).map(({ pan: _pan, cvv: _cvv, ...rest }) => rest);
-  res.json(sanitized);
 });
 
 // POST /api/cards/create
@@ -139,9 +217,13 @@ app.post("/api/cards/create", async (req, res) => {
       type: "virtual",
       name: `Vault card ${groupId ? `(${groupId})` : ""}`.trim(),
       accountId: SLASH_ACCOUNT_ID,
+      cardGroupId: groupId || undefined,
       userData: {
-        slashGroupId: groupId || null,
         createdByUserId: userId,
+        labels: [],
+        lastUsed: null,
+        usageCount: 0,
+        excludedUntil: null,
       },
     };
 
@@ -170,39 +252,9 @@ app.post("/api/cards/create", async (req, res) => {
 
     const slashCard = await slashResponse.json();
 
-    const expMonth = parseInt(slashCard.expiryMonth, 10);
-    const expYear = parseInt(slashCard.expiryYear, 10);
-
-    const newCard = {
-      slash_card_id: slashCard.id,
-      pan: slashCard.pan || null,
-      cvv: slashCard.cvv || null,
-      last4: slashCard.last4,
-      exp_month: Number.isNaN(expMonth) ? null : expMonth,
-      exp_year: Number.isNaN(expYear) ? null : expYear,
-      created_by: userId,
-      slash_group_id: groupId || null,
-      labels: [],
-      last_used: null,
-      usage_count: 0,
-      excluded_until: null,
-      active: slashCard.status === "active",
-      created_at: slashCard.createdAt || undefined,
-    };
-
-    const { data, error } = await supabase
-      .from("cards")
-      .insert(newCard)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("[/api/cards/create] Supabase insert error:", error);
-      return res.status(500).json({ error: error.message });
-    }
-    if (!data) return res.status(500).json({ error: "No card returned after creation" });
-
-    const { pan: _pan, cvv: _cvv, ...safeCard } = data as Card & { cvv?: string };
+    const appCard = mapSlashCardToAppCard(slashCard as SlashCard);
+    // Do not return pan/cvv to the client in this endpoint
+    const { pan: _pan, cvv: _cvv, ...safeCard } = appCard as Card & { pan?: string; cvv?: string };
     res.json(safeCard);
   } catch (e: any) {
     console.error("[/api/cards/create] Unexpected error:", e);
@@ -215,23 +267,51 @@ app.get("/api/cards/:id/full", async (req, res) => {
   const { id } = req.params;
   const { role, groupId } = req.query;
 
+  if (!SLASH_API_KEY) {
+    return res.status(500).json({ error: "Slash API is not configured on the server" });
+  }
+
   if (role === "user" && !groupId) {
     return res.status(400).json({ error: "groupId is required for user role" });
   }
 
-  let query = supabase.from("cards").select("*").eq("id", id);
+  try {
+    const slashResponse = await fetch(
+      `${SLASH_API_BASE_URL}/card/${encodeURIComponent(id)}?include_pan=true`,
+      {
+        headers: { "X-API-Key": SLASH_API_KEY },
+      }
+    );
 
-  if (role === "user" && groupId) {
-    query = query.eq("slash_group_id", groupId as string);
+    if (!slashResponse.ok) {
+      const errorText = await slashResponse.text().catch(() => "");
+      console.error(
+        "[/api/cards/:id/full] Slash API error:",
+        slashResponse.status,
+        slashResponse.statusText,
+        errorText
+      );
+      return res
+        .status(slashResponse.status === 404 ? 404 : 502)
+        .json({ error: "Failed to fetch card from Slash" });
+    }
+
+    const slashCard = await slashResponse.json();
+    const appCard = mapSlashCardToAppCard(slashCard as SlashCard);
+
+    if (role === "user" && groupId && appCard.slash_group_id !== groupId) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    res.json({
+      ...appCard,
+      pan: slashCard.pan || null,
+      cvv: slashCard.cvv || null,
+    });
+  } catch (e: any) {
+    console.error("[/api/cards/:id/full] Unexpected error:", e);
+    res.status(500).json({ error: e?.message || "Unexpected error" });
   }
-
-  const { data, error } = await query.single();
-
-  if (error || !data) {
-    return res.status(404).json({ error: "Card not found" });
-  }
-
-  res.json(data as Card);
 });
 
 // POST /api/autofill/mark_used - unified usage tracking for cards and addresses
@@ -254,26 +334,49 @@ app.post("/api/autofill/mark_used", async (req, res) => {
     let updatedAddress: Address | null = null;
 
     if (cardId) {
-      const { data: card } = await supabase
-        .from("cards")
-        .select("usage_count")
-        .eq("id", cardId)
-        .maybeSingle();
-      const currentCount = card?.usage_count || 0;
+      if (!SLASH_API_KEY) {
+        return res.status(500).json({ error: "Slash API is not configured on the server" });
+      }
 
-      const { data, error } = await supabase
-        .from("cards")
-        .update({
-          last_used: nowIso,
-          usage_count: currentCount + 1,
-          excluded_until: cooldownDate,
-        })
-        .eq("id", cardId)
-        .select()
-        .maybeSingle();
+      const slashGet = await fetch(`${SLASH_API_BASE_URL}/card/${encodeURIComponent(cardId)}`, {
+        headers: { "X-API-Key": SLASH_API_KEY },
+      });
 
-      if (error) return res.status(500).json({ error: error.message });
-      updatedCard = data as Card | null;
+      if (!slashGet.ok) {
+        const errorText = await slashGet.text().catch(() => "");
+        console.error("[/api/autofill/mark_used] Slash get card error:", slashGet.status, errorText);
+        return res.status(slashGet.status === 404 ? 404 : 502).json({ error: "Failed to fetch card from Slash" });
+      }
+
+      const slashCard = await slashGet.json();
+      const userData = slashCard?.userData || {};
+      const currentCount = parseNumber(userData.usageCount) ?? 0;
+
+      const updatedUserData = {
+        ...userData,
+        lastUsed: nowIso,
+        usageCount: currentCount + 1,
+        excludedUntil: cooldownDate,
+      };
+
+      const patchResp = await fetch(`${SLASH_API_BASE_URL}/card/${encodeURIComponent(cardId)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": SLASH_API_KEY,
+        },
+        body: JSON.stringify({ userData: updatedUserData }),
+      });
+
+      if (!patchResp.ok) {
+        const errorText = await patchResp.text().catch(() => "");
+        console.error("[/api/autofill/mark_used] Slash patch card error:", patchResp.status, errorText);
+        return res.status(502).json({ error: "Failed to update card usage on Slash" });
+      }
+
+      const patched = await patchResp.json();
+      const mergedCard: SlashCard = { ...(patched as SlashCard), userData: updatedUserData };
+      updatedCard = mapSlashCardToAppCard(mergedCard);
     }
 
     if (addressId) {

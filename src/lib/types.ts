@@ -7,14 +7,13 @@ export interface User {
 
 export interface Card {
   id: string;
-  slash_card_id: string;
-  pan?: string; // Full card number (only returned for autofill)
-  cvv?: string; // CVV (only returned for autofill)
+  pan?: string | null; // Full card number (only returned for autofill)
+  cvv?: string | null; // CVV (only returned for autofill)
   last4: string;
-  exp_month: number;
-  exp_year: number;
-  created_by: string; // User ID
-  slash_group_id: string;
+  exp_month: number | null;
+  exp_year: number | null;
+  created_by?: string | null; // User ID (from Slash userData)
+  slash_group_id?: string | null;
   labels: string[];
   last_used: string | null; // ISO date string
   usage_count: number;

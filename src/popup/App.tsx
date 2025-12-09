@@ -114,7 +114,7 @@ function App() {
     const query = searchQuery.toLowerCase();
     return (
       card.last4.includes(query) ||
-      card.slash_card_id.toLowerCase().includes(query) ||
+      card.id.toLowerCase().includes(query) ||
       card.labels.some((l) => l.toLowerCase().includes(query))
     );
   });
