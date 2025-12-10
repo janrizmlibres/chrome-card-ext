@@ -114,6 +114,18 @@ function App() {
     }
   }, [user]);
 
+  // Keep active tab aligned with auth/role to avoid getting stuck on admin options
+  useEffect(() => {
+    if (!user && activeTab !== "vault") {
+      setActiveTab("vault");
+      return;
+    }
+
+    if (user?.role !== "admin" && activeTab === "options") {
+      setActiveTab("vault");
+    }
+  }, [user, activeTab]);
+
   const filteredCards = cards.filter((card) => {
     const query = searchQuery.toLowerCase();
     return (
@@ -213,6 +225,7 @@ function App() {
   };
 
   const handleLogout = async () => {
+    setActiveTab("vault"); // ensure next session starts on vault
     await signOut();
     // Auth state change will update UI automatically
   };
