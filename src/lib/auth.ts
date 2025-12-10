@@ -271,17 +271,13 @@ export async function signUp(email: string, password: string) {
     const resolvedEmail = profile?.email || data.user.email || email;
     const slashGroupId = await createSlashGroup(`Vault Group - ${resolvedEmail}`);
 
-    if (data.session) {
-      const { error: persistError } = await supabase
-        .from('users')
-        .update({ slash_group_id: slashGroupId })
-        .eq('id', data.user.id);
+    const { error: persistError } = await supabase
+      .from('users')
+      .update({ slash_group_id: slashGroupId })
+      .eq('id', data.user.id);
 
-      if (persistError) {
-        console.warn('[signUp] Failed to persist Slash group ID:', persistError.message || persistError);
-      }
-    } else {
-      console.warn('[signUp] No session available to persist Slash group ID');
+    if (persistError) {
+      console.warn('[signUp] Failed to persist Slash group ID:', persistError.message || persistError);
     }
 
     const user: User = {
@@ -290,27 +286,6 @@ export async function signUp(email: string, password: string) {
       role: profile?.role || 'user',
       slash_group_id: slashGroupId,
     };
-
-    // If session is available, store it
-    if (data.session) {
-      console.log('[signUp] Storing session manually...');
-      const session = data.session;
-      await new Promise<void>((resolve) => {
-        chrome.storage.local.set({
-          [SESSION_STORAGE_KEY]: {
-            access_token: session.access_token,
-            refresh_token: session.refresh_token,
-          },
-          currentUser: user
-        }, () => resolve());
-      });
-      
-      // Cache the user
-      cachedUser = user;
-      
-      // Notify all listeners
-      notifyAuthListeners(user);
-    }
 
     console.log('[signUp] Sign up complete:', user.email);
     return { user, error: null };
