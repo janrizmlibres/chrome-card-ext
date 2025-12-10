@@ -8,7 +8,6 @@ const SLASH_API_BASE_URL = process.env.SLASH_API_BASE_URL || "https://api.joinsl
 const SLASH_API_VAULT_URL = process.env.SLASH_API_VAULT_URL || "https://vault.joinslash.com";
 const SLASH_API_KEY = process.env.SLASH_API_KEY || "";
 const SLASH_ACCOUNT_ID = process.env.SLASH_ACCOUNT_ID || "";
-const SLASH_VIRTUAL_ACCOUNT_ID = process.env.SLASH_VIRTUAL_ACCOUNT_ID || "";
 
 type SlashCard = {
   id: string;
@@ -209,9 +208,8 @@ app.post("/api/slash/card-groups", async (req, res) => {
     }
 
     const requestBody: Record<string, any> = { name };
-    const resolvedVirtualAccountId = virtualAccountId || SLASH_VIRTUAL_ACCOUNT_ID;
-    if (resolvedVirtualAccountId) {
-      requestBody.virtualAccountId = resolvedVirtualAccountId;
+    if (virtualAccountId) {
+      requestBody.virtualAccountId = virtualAccountId;
     }
 
     const slashResponse = await fetch(`${SLASH_API_BASE_URL}/card-group`, {
@@ -241,7 +239,7 @@ app.post("/api/slash/card-groups", async (req, res) => {
     res.json({
       id: slashGroup.id,
       name: slashGroup.name,
-      virtualAccountId: slashGroup.virtualAccountId || resolvedVirtualAccountId || null,
+      virtualAccountId: slashGroup.virtualAccountId || virtualAccountId || null,
     });
   } catch (e: any) {
     console.error("[/api/slash/card-groups] Unexpected error:", e);
