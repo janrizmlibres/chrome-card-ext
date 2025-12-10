@@ -335,7 +335,34 @@ app.post("/api/cards/create", async (req, res) => {
 
     const slashCard = await slashResponse.json();
 
-    const appCard = mapSlashCardToAppCard(slashCard as SlashCard);
+    // Poll Slash briefly until core fields (last4/expiry) are populated to avoid blank tiles in UI
+    const POLL_INTERVAL_MS = 500;
+    const MAX_POLL_ATTEMPTS = 6;
+    let hydratedSlashCard: SlashCard = slashCard as SlashCard;
+
+    for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
+      const hasCoreDetails =
+        (hydratedSlashCard.last4 || "").trim().length > 0 &&
+        hydratedSlashCard.expiryMonth != null &&
+        hydratedSlashCard.expiryYear != null;
+
+      if (hasCoreDetails) break;
+
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+      const checkResp = await fetch(
+        `${SLASH_API_BASE_URL}/card/${encodeURIComponent(hydratedSlashCard.id)}`,
+        {
+          headers: { "X-API-Key": SLASH_API_KEY },
+        }
+      );
+
+      if (!checkResp.ok) break;
+
+      hydratedSlashCard = await checkResp.json();
+    }
+
+    const appCard = mapSlashCardToAppCard(hydratedSlashCard);
     // Do not return pan/cvv to the client in this endpoint
     const { pan: _pan, cvv: _cvv, ...safeCard } = appCard as Card & { pan?: string; cvv?: string };
     res.json(safeCard);
