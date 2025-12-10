@@ -94,18 +94,47 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
 
             if (matches.length > 0 && cards && cards.length > 0) {
                 const dedup = new Set<string>();
+                const uniqueMatches: { card: any; selector: string }[] = [];
+
                 for (const match of matches) {
                     const key = `${match.card.id}:${match.selector}`;
                     if (dedup.has(key)) continue;
                     dedup.add(key);
+                    uniqueMatches.push(match);
+                }
 
-                    const fullCard = await fetchFullCard(match.card.id, role, groupId);
-                    if (!fullCard) continue;
+                let chosen: { cardId: string; selector: string } | null = null;
+
+                if (uniqueMatches.length === 1) {
+                    chosen = { cardId: uniqueMatches[0].card.id, selector: uniqueMatches[0].selector };
+                } else {
+                    const selection = await promptCardSelection(tabId, uniqueMatches);
+                    if (selection && selection.cardId && selection.selector) {
+                        chosen = selection;
+                    } else {
+                        sendResponse({
+                            success: false,
+                            matched: 0,
+                            fallback: false,
+                            cancelled: true,
+                            cardUsed: false,
+                            addressUsed: false,
+                        });
+                        return;
+                    }
+                }
+
+                if (chosen) {
+                    const fullCard = await fetchFullCard(chosen.cardId, role, groupId);
+                    if (!fullCard) {
+                        sendResponse({ success: false, error: 'Card not found', fallback: false });
+                        return;
+                    }
 
                     const resp = await sendFillCombined(tabId, {
                         card: fullCard,
                         address: bestAddress,
-                        contextSelector: match.selector,
+                        contextSelector: chosen.selector,
                     }, detectedName);
 
                     responses.push(resp);
@@ -118,16 +147,16 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
                             userId
                         );
                     }
-                }
 
-                sendResponse({
-                    success: responses.some(r => r?.success),
-                    matched: responses.filter(r => r?.success).length,
-                    fallback: false,
-                    cardUsed: responses.some(r => r?.cardFilled),
-                    addressUsed: responses.some(r => r?.addressFilled),
-                });
-                return;
+                    sendResponse({
+                        success: !!resp?.success,
+                        matched: resp?.success ? 1 : 0,
+                        fallback: false,
+                        cardUsed: !!resp?.cardFilled,
+                        addressUsed: !!resp?.addressFilled,
+                    });
+                    return;
+                }
             }
 
             // Fallback: use best card (first) and/or best address globally
@@ -160,6 +189,38 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
             sendResponse({ error: err?.message || 'Autofill failed' });
         }
     })();
+}
+
+async function promptCardSelection(
+    tabId: number,
+    options: { card: any; selector: string }[]
+): Promise<{ cardId: string; selector: string } | null> {
+    return new Promise((resolve) => {
+        chrome.tabs.sendMessage(
+            tabId,
+            {
+                type: 'SHOW_CARD_SELECTION_MODAL',
+                options: options.map(({ card, selector }) => ({
+                    cardId: card.id,
+                    last4: card.last4,
+                    labels: Array.isArray(card.labels) ? card.labels : [],
+                    selector,
+                    createdByEmail: card.created_by_email ?? null,
+                })),
+            },
+            (response) => {
+                if (chrome.runtime.lastError) {
+                    resolve(null);
+                    return;
+                }
+                if (response && response.cardId && response.selector) {
+                    resolve({ cardId: response.cardId, selector: response.selector });
+                } else {
+                    resolve(null);
+                }
+            }
+        );
+    });
 }
 
 // Listen for keyboard commands

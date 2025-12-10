@@ -33,6 +33,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return true;
   }
 
+  if (message.type === 'SHOW_CARD_SELECTION_MODAL') {
+      showCardSelectionModal(message.options || [], sendResponse);
+      return true;
+  }
+
   if (message.type === 'SCAN_FOR_CARD_NUMBERS') {
       const candidates = findCardTextCandidates();
       sendResponse?.({ candidates });
@@ -105,6 +110,189 @@ function handleFieldMapping(element: HTMLElement, type: string) {
       });
   }
 }
+
+type SelectionOption = {
+    cardId: string;
+    last4: string;
+    labels: string[];
+    selector: string;
+    createdByEmail?: string | null;
+};
+
+let cleanupSelectionModal: (() => void) | null = null;
+
+function showCardSelectionModal(options: SelectionOption[], sendResponse?: (resp: any) => void) {
+    if (!Array.isArray(options) || options.length === 0) {
+        sendResponse?.({ cancelled: true });
+        return;
+    }
+
+    // If a modal is already open, clean it first
+    if (cleanupSelectionModal) {
+        cleanupSelectionModal();
+    }
+
+    const overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.zIndex = '2147483647';
+    overlay.style.background = 'rgba(0,0,0,0.45)';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.padding = '16px';
+
+    const modal = document.createElement('div');
+    modal.style.width = '100%';
+    modal.style.maxWidth = '520px';
+    modal.style.background = '#fff';
+    modal.style.borderRadius = '12px';
+    modal.style.boxShadow = '0 10px 40px rgba(0,0,0,0.2)';
+    modal.style.padding = '20px';
+    modal.style.fontFamily = 'Inter, system-ui, -apple-system, sans-serif';
+
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.alignItems = 'flex-start';
+    header.style.justifyContent = 'space-between';
+    header.style.gap = '12px';
+
+    const titleWrap = document.createElement('div');
+    const title = document.createElement('div');
+    title.textContent = 'Choose a card';
+    title.style.fontSize = '18px';
+    title.style.fontWeight = '700';
+    title.style.color = '#111827';
+    const subtitle = document.createElement('div');
+    subtitle.textContent = 'Multiple matching card numbers were found on this page. Select one to autofill.';
+    subtitle.style.fontSize = '14px';
+    subtitle.style.color = '#4B5563';
+    subtitle.style.marginTop = '2px';
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(subtitle);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.style.border = 'none';
+    closeBtn.style.background = 'transparent';
+    closeBtn.style.color = '#6B7280';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.style.fontSize = '16px';
+    closeBtn.style.padding = '4px';
+    closeBtn.onclick = () => finalize(null);
+
+    header.appendChild(titleWrap);
+    header.appendChild(closeBtn);
+
+    const list = document.createElement('div');
+    list.style.maxHeight = '320px';
+    list.style.overflowY = 'auto';
+    list.style.marginTop = '12px';
+    list.style.display = 'flex';
+    list.style.flexDirection = 'column';
+    list.style.gap = '8px';
+
+    options.forEach((opt) => {
+        const btn = document.createElement('button');
+        btn.style.width = '100%';
+        btn.style.textAlign = 'left';
+        btn.style.border = '1px solid #E5E7EB';
+        btn.style.borderRadius = '10px';
+        btn.style.padding = '12px';
+        btn.style.background = '#fff';
+        btn.style.cursor = 'pointer';
+        btn.style.transition = 'border-color 120ms ease, box-shadow 120ms ease';
+        btn.onmouseenter = () => {
+            btn.style.borderColor = '#4F46E5';
+            btn.style.boxShadow = '0 4px 14px rgba(79,70,229,0.12)';
+        };
+        btn.onmouseleave = () => {
+            btn.style.borderColor = '#E5E7EB';
+            btn.style.boxShadow = 'none';
+        };
+        btn.onclick = () => finalize(opt);
+
+        const row1 = document.createElement('div');
+        row1.style.display = 'flex';
+        row1.style.alignItems = 'center';
+        row1.style.justifyContent = 'space-between';
+        row1.style.gap = '10px';
+
+        const last4 = document.createElement('div');
+        last4.textContent = `•••• ${opt.last4}`;
+        last4.style.fontWeight = '700';
+        last4.style.color = '#111827';
+        last4.style.fontSize = '15px';
+
+        const owner = document.createElement('div');
+        owner.textContent = opt.createdByEmail || 'Card';
+        owner.style.fontSize = '12px';
+        owner.style.color = '#6B7280';
+        owner.style.whiteSpace = 'nowrap';
+        owner.style.textOverflow = 'ellipsis';
+        owner.style.overflow = 'hidden';
+        owner.style.maxWidth = '200px';
+
+        row1.appendChild(last4);
+        row1.appendChild(owner);
+
+        const labels = document.createElement('div');
+        labels.textContent = opt.labels && opt.labels.length > 0 ? opt.labels.join(', ') : 'No labels';
+        labels.style.fontSize = '12px';
+        labels.style.color = '#4B5563';
+        labels.style.marginTop = '4px';
+
+        btn.appendChild(row1);
+        btn.appendChild(labels);
+        list.appendChild(btn);
+    });
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.flexDirection = 'column';
+    actions.style.gap = '8px';
+    actions.style.marginTop = '12px';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.width = '100%';
+    cancelBtn.style.border = '1px solid #D1D5DB';
+    cancelBtn.style.background = '#fff';
+    cancelBtn.style.color = '#374151';
+    cancelBtn.style.borderRadius = '10px';
+    cancelBtn.style.padding = '10px';
+    cancelBtn.style.cursor = 'pointer';
+    cancelBtn.onmouseenter = () => (cancelBtn.style.background = '#F9FAFB');
+    cancelBtn.onmouseleave = () => (cancelBtn.style.background = '#fff');
+    cancelBtn.onclick = () => finalize(null);
+
+    actions.appendChild(cancelBtn);
+
+    modal.appendChild(header);
+    modal.appendChild(list);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    function finalize(opt: SelectionOption | null) {
+        if (cleanupSelectionModal) {
+            cleanupSelectionModal();
+            cleanupSelectionModal = null;
+        }
+        if (opt) {
+            sendResponse?.({ cardId: opt.cardId, selector: opt.selector });
+        } else {
+            sendResponse?.({ cancelled: true });
+        }
+    }
+
+    cleanupSelectionModal = () => {
+        overlay.remove();
+        cleanupSelectionModal = null;
+    };
+}
+
 
 function getCssSelector(el: HTMLElement): string {
   if (el.id) return `#${el.id}`;
