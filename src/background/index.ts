@@ -72,10 +72,26 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
+function setAutofillLoading(tabId: number, isLoading: boolean): Promise<void> {
+    return new Promise((resolve) => {
+        chrome.tabs.sendMessage(
+            tabId,
+            { type: 'AUTOFILL_LOADING', isLoading },
+            () => {
+                // ignore errors from tabs without the content script
+                resolve();
+            }
+        );
+    });
+}
+
 function performAutofillNext(userId: string | undefined, role: string | undefined, groupId: string | undefined, sendResponse: (response: any) => void) {
     (async () => {
+        let tabId: number | null = null;
         try {
-            const tabId = await getActiveTabId();
+            tabId = await getActiveTabId();
+            await setAutofillLoading(tabId, true);
+
             const detectedName = await fetchDetectedName(tabId);
             const candidates = await scanForCardCandidates(tabId);
             const [cards, addresses] = await Promise.all([
@@ -187,6 +203,10 @@ function performAutofillNext(userId: string | undefined, role: string | undefine
             });
         } catch (err: any) {
             sendResponse({ error: err?.message || 'Autofill failed' });
+        } finally {
+            if (tabId !== null) {
+                await setAutofillLoading(tabId, false);
+            }
         }
     })();
 }
@@ -360,7 +380,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const { cardId, addressId, address: addressPayload, role, groupId, userId } = message.payload || {};
     
     (async () => {
+        let tabId: number | null = null;
         try {
+            tabId = await getActiveTabId();
+            await setAutofillLoading(tabId, true);
+
             const fullCard = cardId ? await fetchFullCard(cardId, role, groupId) : null;
             if (cardId && !fullCard) {
                 sendResponse({ error: 'Card not found' });
@@ -372,7 +396,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 addressToUse = await fetchFullAddress(addressId);
             }
 
-            const tabId = await getActiveTabId();
             const detectedName = await fetchDetectedName(tabId);
             const candidates = await scanForCardCandidates(tabId);
             const contextualMatches = fullCard
@@ -408,6 +431,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ success: !!resp?.success, contextual: wasContextual });
         } catch (err: any) {
             sendResponse({ error: err?.message || 'Autofill failed' });
+        } finally {
+            if (tabId !== null) {
+                await setAutofillLoading(tabId, false);
+            }
         }
     })();
     return true;

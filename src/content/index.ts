@@ -67,6 +67,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       });
       return true; // async response
   }
+
+  if (message.type === 'AUTOFILL_LOADING') {
+      if (message.isLoading) {
+          showAutofillLoading();
+      } else {
+          hideAutofillLoading();
+      }
+  }
 });
 
 function handleFieldMapping(element: HTMLElement, type: string) {
@@ -120,6 +128,7 @@ type SelectionOption = {
 };
 
 let cleanupSelectionModal: (() => void) | null = null;
+let cleanupAutofillLoading: (() => void) | null = null;
 
 function showCardSelectionModal(options: SelectionOption[], sendResponse?: (resp: any) => void) {
     if (!Array.isArray(options) || options.length === 0) {
@@ -291,6 +300,60 @@ function showCardSelectionModal(options: SelectionOption[], sendResponse?: (resp
         overlay.remove();
         cleanupSelectionModal = null;
     };
+}
+
+function showAutofillLoading() {
+    if (cleanupAutofillLoading) return;
+
+    const pill = document.createElement('div');
+    pill.style.position = 'fixed';
+    pill.style.bottom = '16px';
+    pill.style.right = '16px';
+    pill.style.zIndex = '2147483647';
+    pill.style.pointerEvents = 'none'; // non-blocking
+    pill.style.padding = '8px 14px';
+    pill.style.borderRadius = '999px';
+    pill.style.background = 'rgba(17,24,39,0.92)';
+    pill.style.color = '#F9FAFB';
+    pill.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+    pill.style.fontSize = '13px';
+    pill.style.display = 'inline-flex';
+    pill.style.alignItems = 'center';
+    pill.style.gap = '8px';
+    pill.style.boxShadow = '0 6px 24px rgba(0,0,0,0.35)';
+
+    const spinner = document.createElement('div');
+    spinner.style.width = '14px';
+    spinner.style.height = '14px';
+    spinner.style.borderRadius = '999px';
+    spinner.style.border = '2px solid #4B5563';
+    spinner.style.borderTopColor = '#6366F1';
+    spinner.style.animation = 'slash-spin 0.7s linear infinite';
+
+    if (!document.getElementById('slash-spin-style')) {
+        const style = document.createElement('style');
+        style.id = 'slash-spin-style';
+        style.textContent = '@keyframes slash-spin { to { transform: rotate(360deg); } }';
+        document.head.appendChild(style);
+    }
+
+    const label = document.createElement('span');
+    label.textContent = 'Autofilling with Slash...';
+
+    pill.appendChild(spinner);
+    pill.appendChild(label);
+    document.body.appendChild(pill);
+
+    cleanupAutofillLoading = () => {
+        pill.remove();
+        cleanupAutofillLoading = null;
+    };
+}
+
+function hideAutofillLoading() {
+    if (cleanupAutofillLoading) {
+        cleanupAutofillLoading();
+    }
 }
 
 
