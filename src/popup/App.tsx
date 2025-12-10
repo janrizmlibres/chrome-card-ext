@@ -127,11 +127,16 @@ function App() {
   }, [user, activeTab]);
 
   const filteredCards = cards.filter((card) => {
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+
     return (
       card.last4.includes(query) ||
       card.id.toLowerCase().includes(query) ||
-      card.labels.some((l) => l.toLowerCase().includes(query))
+      card.labels.some((l) => l.toLowerCase().includes(query)) ||
+      (card.created_by_email &&
+        card.created_by_email.toLowerCase().includes(query)) ||
+      `${card.slash_group_id ?? ""}`.toLowerCase().includes(query)
     );
   });
 
