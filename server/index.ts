@@ -169,6 +169,28 @@ app.get("/api/auth/user/:userId", async (req, res) => {
   res.json(data);
 });
 
+// POST /api/users/attach-slash-group - Persist Slash group id using service role (bypasses RLS)
+app.post("/api/users/attach-slash-group", async (req, res) => {
+  const { userId, slashGroupId } = req.body || {};
+
+  if (!userId || !slashGroupId) {
+    return res.status(400).json({ error: "userId and slashGroupId are required" });
+  }
+
+  const { data, error } = await supabase
+    .from("users")
+    .update({ slash_group_id: slashGroupId })
+    .eq("id", userId)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  return res.json(data);
+});
+
 // POST /api/slash/card-groups - Create a Slash card group for new users
 app.post("/api/slash/card-groups", async (req, res) => {
   try {

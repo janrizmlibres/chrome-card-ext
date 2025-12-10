@@ -271,13 +271,18 @@ export async function signUp(email: string, password: string) {
     const resolvedEmail = profile?.email || data.user.email || email;
     const slashGroupId = await createSlashGroup(`Vault Group - ${resolvedEmail}`);
 
-    const { error: persistError } = await supabase
-      .from('users')
-      .update({ slash_group_id: slashGroupId })
-      .eq('id', data.user.id);
+    const persistResponse = await fetch(`${API_BASE_URL}/api/users/attach-slash-group`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: data.user.id, slashGroupId }),
+    });
 
-    if (persistError) {
-      console.warn('[signUp] Failed to persist Slash group ID:', persistError.message || persistError);
+    if (!persistResponse.ok) {
+      const errorText = await persistResponse.text().catch(() => '');
+      console.warn(
+        '[signUp] Failed to persist Slash group ID:',
+        errorText || persistResponse.statusText
+      );
     }
 
     const user: User = {
