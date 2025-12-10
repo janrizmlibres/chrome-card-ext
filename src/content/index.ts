@@ -84,6 +84,7 @@ function handleFieldMapping(element: HTMLElement, type: string) {
   if (type === 'slash-set-number') fieldType = 'cardNumber';
   else if (type === 'slash-set-expiry') fieldType = 'cardExpiry';
   else if (type === 'slash-set-cvv') fieldType = 'cardCvv';
+  else if (type === 'slash-set-card-name') fieldType = 'cardName';
   else if (type === 'slash-set-address1') fieldType = 'address1';
   else if (type === 'slash-set-address2') fieldType = 'address2';
   else if (type === 'slash-set-city') fieldType = 'city';
@@ -418,7 +419,7 @@ type FillCombinedParams = {
     detectedName?: string | null;
 };
 
-function fillCardFields(profile: any, card: any, fillStrategy: (selectors: string[] | undefined, value: string) => boolean): boolean {
+function fillCardFields(profile: any, card: any, cardName: string | null, fillStrategy: (selectors: string[] | undefined, value: string) => boolean): boolean {
     if (!card) return false;
     let filled = false;
 
@@ -435,6 +436,10 @@ function fillCardFields(profile: any, card: any, fillStrategy: (selectors: strin
 
     if (card.cvv) {
         filled = fillStrategy(profile.cvvSelectors, card.cvv) || filled;
+    }
+
+    if (cardName) {
+        filled = fillStrategy(profile.cardNameSelectors, cardName) || filled;
     }
 
     return filled;
@@ -506,14 +511,7 @@ function fillCombined({ card, address, contextSelector, sendResponse, detectedNa
             const profile = response.profile;
 
             let addressToUse = address ? { ...address } : null;
-            const nameToUse = detectedName ?? latestDetectedName ?? addressToUse?.name ?? null;
-            if (nameToUse) {
-                if (addressToUse) {
-                    addressToUse.name = nameToUse;
-                } else {
-                    addressToUse = { name: nameToUse };
-                }
-            }
+            const cardNameToUse = detectedName ?? latestDetectedName ?? null;
 
             let contextEl: HTMLElement | null = null;
             if (contextSelector) {
@@ -536,7 +534,7 @@ function fillCombined({ card, address, contextSelector, sendResponse, detectedNa
                       fillNearestWithContext(contextEl as HTMLElement, selectors, value)
                 : (selectors: string[] | undefined, value: string) => fillInput(selectors, value);
 
-            const cardFilled = fillCardFields(profile, card, fillStrategy);
+            const cardFilled = fillCardFields(profile, card, cardNameToUse, fillStrategy);
             const addressFilled = fillAddressFields(profile, addressToUse, fillStrategy);
 
             sendResponse?.({

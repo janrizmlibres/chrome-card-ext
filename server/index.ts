@@ -101,6 +101,7 @@ type SelectorFieldKey =
   | "cardNumberSelectors"
   | "cardExpirySelectors"
   | "cvvSelectors"
+  | "cardNameSelectors"
   | "address1Selectors"
   | "address2Selectors"
   | "citySelectors"
@@ -113,6 +114,7 @@ const SELECTOR_DB_FIELDS: Record<SelectorFieldKey, string> = {
   cardNumberSelectors: "cardnumberselectors",
   cardExpirySelectors: "cardexpiryselectors",
   cvvSelectors: "cvvselectors",
+  cardNameSelectors: "cardnameselectors",
   address1Selectors: "address1selectors",
   address2Selectors: "address2selectors",
   citySelectors: "cityselectors",
@@ -129,6 +131,7 @@ const mapDbRowToSelectorProfile = (row: any): SelectorProfile => ({
   cardNumberSelectors: row.cardnumberselectors || [],
   cardExpirySelectors: row.cardexpiryselectors || [],
   cvvSelectors: row.cvvselectors || [],
+  cardNameSelectors: row.cardnameselectors || [],
   address1Selectors: row.address1selectors || [],
   address2Selectors: row.address2selectors || [],
   citySelectors: row.cityselectors || [],
@@ -697,6 +700,7 @@ app.post("/api/selectorProfiles", async (req, res) => {
         cardnumberselectors: [],
         cardexpiryselectors: [],
         cvvselectors: [],
+        cardnameselectors: [],
         address1selectors: [],
         address2selectors: [],
         cityselectors: [],
@@ -728,6 +732,7 @@ app.post("/api/selectorProfiles", async (req, res) => {
     const currentCardNumber = profile.cardnumberselectors || [];
     const currentCardExpiry = profile.cardexpiryselectors || [];
     const currentCvv = profile.cvvselectors || [];
+    const currentCardName = profile.cardnameselectors || [];
     const currentAddress1 = profile.address1selectors || [];
     const currentAddress2 = profile.address2selectors || [];
     const currentCity = profile.cityselectors || [];
@@ -746,6 +751,8 @@ app.post("/api/selectorProfiles", async (req, res) => {
       ];
     } else if (fieldType === "cardCvv") {
       updates.cvvselectors = [...new Set([...currentCvv, selector])];
+    } else if (fieldType === "cardName") {
+      updates.cardnameselectors = [...new Set([...currentCardName, selector])];
     } else if (fieldType === "address1") {
       updates.address1selectors = [...new Set([...currentAddress1, selector])];
     } else if (fieldType === "address2") {
@@ -784,6 +791,7 @@ app.post("/api/selectorProfiles", async (req, res) => {
       cardNumberSelectors: updated.cardnumberselectors || [],
       cardExpirySelectors: updated.cardexpiryselectors || [],
       cvvSelectors: updated.cvvselectors || [],
+      cardNameSelectors: updated.cardnameselectors || [],
       address1Selectors: updated.address1selectors || [],
       address2Selectors: updated.address2selectors || [],
       citySelectors: updated.cityselectors || [],

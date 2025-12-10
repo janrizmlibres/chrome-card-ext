@@ -25,6 +25,12 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ['editable'],
   });
 
+  chrome.contextMenus.create({
+    id: 'slash-set-card-name',
+    title: 'Set as Card Name Field',
+    contexts: ['editable'],
+  });
+
   // Address fields
   chrome.contextMenus.create({
     id: 'slash-set-address1',

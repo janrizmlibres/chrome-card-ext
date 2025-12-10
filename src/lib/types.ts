@@ -30,6 +30,7 @@ export interface SelectorProfile {
   cardNumberSelectors: string[];
   cardExpirySelectors: string[];
   cvvSelectors: string[];
+  cardNameSelectors: string[];
   address1Selectors: string[];
   address2Selectors: string[];
   citySelectors: string[];

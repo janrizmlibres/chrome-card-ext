@@ -6,6 +6,7 @@ type SelectorFieldKey =
   | "cardNumberSelectors"
   | "cardExpirySelectors"
   | "cvvSelectors"
+  | "cardNameSelectors"
   | "address1Selectors"
   | "address2Selectors"
   | "citySelectors"
@@ -18,7 +19,8 @@ const SELECTOR_FIELDS: { key: SelectorFieldKey; label: string }[] = [
   { key: "cardNumberSelectors", label: "Card Number" },
   { key: "cardExpirySelectors", label: "Expiry" },
   { key: "cvvSelectors", label: "CVV" },
-  { key: "nameSelectors", label: "Full Name" },
+  { key: "cardNameSelectors", label: "Card Name" },
+  { key: "nameSelectors", label: "Billing Name" },
   { key: "address1Selectors", label: "Address 1" },
   { key: "address2Selectors", label: "Address 2" },
   { key: "citySelectors", label: "City" },
