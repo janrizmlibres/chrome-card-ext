@@ -11,8 +11,8 @@ See: .planning/PROJECT.md (updated 2026-05-03)
 
 Phase: 1 of 3 (Import Sync)
 Plan: 0 of 1 in current phase
-Status: Ready to plan
-Last activity: 2026-05-03 — Project initialized, roadmap created
+Status: Context gathered — ready to plan
+Last activity: 2026-05-03 — Phase 1 context captured (CONTEXT.md + DISCUSSION-LOG.md)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -38,6 +38,11 @@ Progress: [░░░░░░░░░░] 0%
 - Init: Address-card relationship is round-robin (no FK); filtering is the selection mechanism
 - Init: "No address available" is an isolated bug, not caused by import sync timing
 - Init: Address filter lives in popup UI (user-driven, not auto-detected from page)
+- Phase 1: Convert `POST /api/addresses/import` from 202 + background IIFE to inline awaited insert returning 200
+- Phase 1: Wire `onAddressesImported` callback prop from App into AdminOptions; AdminOptions calls it after successful import
+- Phase 1: Import button shows in-flight state via local `isImporting` boolean + RefreshCw spinner (mirror of `handleGenerateCard`)
+- Phase 1: Card import explicitly out of scope — handleGenerateCard already self-refreshes; PROJECT/ROADMAP cleanup deferred to next transition
+- Phase 1: Post-import refresh failures shown inline; no auto-retry (recovery = reopen popup)
 
 ### Pending Todos
 
@@ -56,5 +61,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-03
-Stopped at: Project initialization complete — roadmap created, ready to plan Phase 1
-Resume file: None
+Stopped at: Phase 1 context gathered
+Resume file: .planning/phases/01-import-sync/01-CONTEXT.md
