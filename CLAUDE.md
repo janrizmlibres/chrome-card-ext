@@ -4,13 +4,6 @@
 ## Project
 
 **Slash Vault** is a Chrome Manifest V3 extension that autofills Slash virtual card details and addresses into web forms. Cards are sourced from the Slash API; addresses are stored in Supabase. Autofill is triggered per-card from the popup or globally via Ctrl+Shift+F.
-
-**Current milestone:** Three client-reported UX and data fixes:
-1. **Import Sync (Phase 1)** — Popup should auto-refresh after admin imports without user interaction
-2. **Address Filtering (Phase 2)** — State/city filter in popup controls which addresses pair with cards
-3. **Address Display Debug (Phase 3)** — "No address available" appears on all cards despite Supabase being populated
-
-**Planning artifacts:** `.planning/` — read `STATE.md` first, then `ROADMAP.md` for current phase context.
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:STACK.md -->
@@ -132,15 +125,13 @@ popup fetchAddresses()
 
 ### Popup refresh lifecycle
 
-`fetchCards()` and `fetchAddresses()` are called only inside `useEffect([user])` — i.e., on login. They are **not** called after admin import. This is the root cause of the sync issue (Phase 1).
+`fetchCards()` and `fetchAddresses()` are called only inside `useEffect([user])` — i.e., on login. They are **not** called after admin import.
 
 ### MV3 constraints
 - Background service worker is not persistent — can be torn down at any time
 - All in-memory state in background can disappear; re-derive from `chrome.storage.local` or the API on each message
 - `chrome.storage.local` keys: `supabase_session`, `currentUser`
 
-### Known issues under investigation
-- **"No address available" (Phase 3):** Addresses are confirmed in Supabase `addresses` table but do not appear in the popup. Root cause unknown — likely in the `GET_ADDRESSES` → background → Express → Supabase data path. Suspect: missing or wrong `userId` filter, Supabase RLS, or Express query condition. Do not assume this is a sync issue — it is isolated.
 <!-- GSD:architecture-end -->
 
 <!-- GSD:skills-start source:skills/ -->
@@ -156,12 +147,9 @@ Before using Edit, Write, or other file-changing tools, start work through a GSD
 
 Use these entry points:
 - `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing (use for Phase 3 address debugging)
+- `/gsd-debug` for investigation and bug fixing
 - `/gsd-plan-phase N` or `/gsd-discuss-phase N` to plan the next phase
 - `/gsd-execute-phase N` for planned phase work
-
-Current phase: **Phase 1 — Import Sync** (ready to plan)
-Next: `/gsd-discuss-phase 1` or `/gsd-plan-phase 1`
 
 Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
 <!-- GSD:workflow-end -->
