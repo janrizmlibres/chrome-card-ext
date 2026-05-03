@@ -6,7 +6,7 @@ Three focused improvements to the Slash Vault Chrome extension based on client f
 
 ## Phases
 
-- [ ] **Phase 1: Import Sync** — Popup auto-refreshes cards and addresses after admin import
+- [x] **Phase 1: Import Sync** — Popup auto-refreshes cards and addresses after admin import (address-only scope; 2026-05-03)
 - [ ] **Phase 2: Address Display Debug** — Investigate and fix "No address available" root cause
 - [ ] **Phase 3: Address Filtering** — State/city filter in popup controls the active address pool
 
@@ -24,7 +24,7 @@ Three focused improvements to the Slash Vault Chrome extension based on client f
 
 **Plans:** 1 plan
 Plans:
-- [ ] 01-01-PLAN.md — Convert addresses-import to sync 200, add isImporting spinner, wire onAddressesImported→fetchAddresses (address-only scope per D-14)
+- [x] 01-01-PLAN.md — Convert addresses-import to sync 200, add isImporting spinner, wire onAddressesImported→fetchAddresses (address-only scope per D-14)
 
 ### Phase 2: Address Display Debug
 **Goal**: Identify and fix the root cause of "No address available" appearing on all card rows even when the Supabase `addresses` table is populated. This is an isolated debugging phase — not related to import sync. Must land before Phase 3 so address filtering can be tested against a working address pool.
@@ -59,6 +59,6 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Import Sync | 0/1 | Not started | - |
+| 1. Import Sync | 1/1 | Complete (human UAT pending) | 2026-05-03 |
 | 2. Address Display Debug | 0/2 | Not started | - |
 | 3. Address Filtering | 0/2 | Not started | - |
