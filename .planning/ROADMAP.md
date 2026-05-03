@@ -46,9 +46,10 @@ Plans:
   3. Clearing the search input restores the full active pool and refreshes pairings
   4. Each card row displays the name, city, and state of its currently paired address (or "No address available" only when the filtered pool is genuinely empty)
 
+**Plans:** 2 plans
 Plans:
-- [ ] 03-01: Add a single freeform search input to the popup (above the card list); case-insensitive substring match against `city` OR `state`
-- [ ] 03-02: Wire the search string into the `activeAddresses` computation so round-robin pairing uses the filtered pool
+- [ ] 03-01-PLAN.md — Add `addressSearch` useState + render second freeform search input below the card-search input in the popup header (FILTER-01)
+- [ ] 03-02-PLAN.md — Derive `filteredAddresses` from `activeAddresses` + `addressSearch`, switch round-robin pairing to `filteredAddresses`, add distinct "No address matches filter" empty-state branch (FILTER-02, FILTER-03, FILTER-04)
 
 ## Progress
 
