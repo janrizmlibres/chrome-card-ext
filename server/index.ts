@@ -986,26 +986,25 @@ app.post("/api/addresses/import", async (req, res) => {
     return res.status(400).json({ error: "no valid addresses to import" });
   }
 
-  // Respond immediately; process in background
-  res.status(202).json({
-    accepted: sanitized.length,
-    message: "Accepted for background import",
-  });
-
   const chunkSize = 500;
-  (async () => {
-    for (let i = 0; i < sanitized.length; i += chunkSize) {
-      const chunk = sanitized.slice(i, i + chunkSize);
-      const { error } = await supabase
-        .from("addresses")
-        .upsert(chunk, { onConflict: "id" });
-      if (error) {
-        console.error("[addresses/import] chunk insert error:", error);
-        // Continue with remaining chunks to avoid partial blocking
-      }
+  let inserted = 0;
+  for (let i = 0; i < sanitized.length; i += chunkSize) {
+    const chunk = sanitized.slice(i, i + chunkSize);
+    const { error } = await supabase
+      .from("addresses")
+      .upsert(chunk, { onConflict: "id" });
+    if (error) {
+      console.error("[addresses/import] chunk insert error:", error);
+      // Continue with remaining chunks to avoid partial blocking (D-03)
+    } else {
+      inserted += chunk.length;
     }
-  })().catch((err) => {
-    console.error("[addresses/import] unexpected error:", err);
+  }
+
+  return res.status(200).json({
+    accepted: inserted,
+    inserted,
+    message: `Imported ${inserted} addresses`,
   });
 });
 
