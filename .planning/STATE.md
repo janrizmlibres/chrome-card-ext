@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 2 fix applied (code) and SQL migration handed to user; Phase 3 next
-last_updated: "2026-05-03T08:32:00.000Z"
-last_activity: 2026-05-03 -- Phase 02 resolved via /gsd-debug (root cause: addresses.excluded_until column missing in live DB; fix: SQL migration + background handler res.ok hardening)
+stopped_at: Phase 3 context gathered (.planning/phases/03-address-filtering/03-CONTEXT.md); ready for /gsd-plan-phase 3
+last_updated: "2026-05-03T08:59:00.000Z"
+last_activity: 2026-05-03 -- Phase 3 discuss complete; freeform-search decisions locked across UI placement, empty-state copy, persistence, tokenization
 progress:
   total_phases: 3
   completed_phases: 2
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-03)
 
 ## Current Position
 
-Phase: 2 of 3 (Address Display Debug) — code fix applied; SQL migration + UAT pending
-Plan: n/a (debug-driven phase, no plan files)
-Status: User must run `ALTER TABLE addresses ADD COLUMN IF NOT EXISTS excluded_until timestamptz;` in Supabase, then verify per 02-FIX.md §3
-Last activity: 2026-05-03 -- Phase 02 resolved via /gsd-debug (schema drift on `addresses.excluded_until`)
+Phase: 3 of 3 (Address Filtering) — context gathered; ready for planning
+Plan: n/a (PLAN.md not yet generated; run `/gsd-plan-phase 3`)
+Status: 03-CONTEXT.md captures all locked implementation decisions; downstream researcher/planner can act without re-asking the user
+Last activity: 2026-05-03 -- Phase 3 discuss complete (freeform-search, single literal substring, no persistence, distinct empty-state copy)
 
 Progress: [██████░░░░] 67%
 
@@ -65,6 +65,14 @@ Progress: [██████░░░░] 67%
 - Phase 2 root cause: schema drift — `addresses.excluded_until` column declared in `schema.sql` but missing from the deployed Supabase table. PostgREST 500 on `?activeOnly=true` was forwarded as the addresses payload by the background handler (no `res.ok` check), causing the popup to silently render "No address available" for every card row.
 - Phase 2 fix path: A — restore the column on the live DB via manual SQL migration (user-authorized) + harden `GET_ADDRESSES` background handler with `res.ok` check so future server 5xx responses surface as visible errors instead of silent empty pools. Path D (derive cooldown from `last_used` + global TTL) considered and rejected — would amputate per-row cooldown design across server, popup, and types.
 - 2026-05-03: Phase 3 design revised — replace cascading state→city dropdowns with a single freeform search input that matches case-insensitive substring against `city` OR `state` (one match in either column is sufficient). Rationale: faster UX, supports partial matches like "tex" hitting both Texas state and Texarkana city. ROADMAP.md Phase 3 + REQUIREMENTS.md FILTER-01..04 updated; requirement IDs preserved for traceability.
+- Phase 3 (Discuss, 2026-05-03):
+  - UI placement: stacked full-width input directly below the existing card search; placeholder "Filter addresses by city or state"; no inline match counter (D-01..D-03)
+  - Match semantics: single literal substring, `trim().toLowerCase().includes(...)` against `city` OR `state` only (no `name`/`street`/`zip`); no whitespace tokenization (D-04..D-06)
+  - Pairing: `filteredAddresses` derives from `activeAddresses` (excluded filter runs first); round-robin at `App.tsx:413-416` switches to the filtered pool (D-07..D-09)
+  - Empty state: distinct per-card "No address matches filter" copy when filter has zero matches; existing "No address available" preserved when the active pool is genuinely empty (D-10..D-12)
+  - Persistence: none — `useState` only, resets on each popup open, mirrors the card search (D-13)
+  - Backend: no changes; popup-only phase (D-14)
+  - PROJECT.md FILTER-01/02 corrected to remove stale "state and then city" language
 
 ### Pending Todos
 
@@ -85,7 +93,7 @@ None yet.
 
 | Date | Slug | Description |
 |------|------|-------------|
-| 2026-05-03 | revise-phase3-freeform-search | Replace Phase 3 cascading state/city dropdowns with single freeform search (matches city OR state) in ROADMAP.md + REQUIREMENTS.md |
+| 2026-05-03 | revise-phase3-freeform-search | Replace Phase 3 cascading state/city dropdowns with single freeform search (matches city OR state) in ROADMAP.md + REQUIREMENTS.md. *(Quick-task PLAN/SUMMARY files removed by user after rollup into Phase 3 CONTEXT.md.)* |
 
 ## Deferred Items
 

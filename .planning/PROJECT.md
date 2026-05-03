@@ -26,8 +26,8 @@ Autofill should work reliably — the right card and address fill the right fiel
 ### Active
 
 - [ ] **SYNC-01**: After address or card import completes, the popup automatically re-fetches and displays the updated data without requiring the user to close/reopen or click around
-- [ ] **FILTER-01**: User can filter the address pool by state and then by city in the popup; only addresses matching the filter participate in round-robin pairing with cards
-- [ ] **FILTER-02**: When a state/city filter is active, each card row shows only addresses from the filtered pool
+- [ ] **FILTER-01**: User can filter the address pool in the popup using a single freeform search input (no separate state/city dropdowns); a case-insensitive substring match against `city` OR `state` decides which addresses participate in round-robin pairing
+- [ ] **FILTER-02**: While the search is active, each card row pairs only with addresses from the filtered pool, and the empty-pool state is visually distinguishable from "no addresses imported"
 - [ ] **DEBUG-01**: "No address available" is resolved — addresses stored in Supabase appear in the popup; root cause identified and fixed through guided debugging
 
 ### Out of Scope
