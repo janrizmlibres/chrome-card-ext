@@ -493,7 +493,7 @@ function App() {
             </div>
           </>
         ) : (
-            <AdminOptions user={user as User} />
+            <AdminOptions user={user as User} onAddressesImported={fetchAddresses} />
         )}
       </main>
     </div>

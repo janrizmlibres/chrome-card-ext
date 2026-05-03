@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { User, SelectorProfile, NetworkProfile } from "../lib/types";
-import { Trash2, Clock, Globe, Plus } from "lucide-react";
+import { Trash2, Clock, Globe, Plus, RefreshCw } from "lucide-react";
 
 type SelectorFieldKey =
   | "cardNumberSelectors"
@@ -40,9 +40,10 @@ const textToSelectors = (text: string) =>
 
 interface AdminOptionsProps {
   user: User;
+  onAddressesImported?: () => void;
 }
 
-export function AdminOptions({ user }: AdminOptionsProps) {
+export function AdminOptions({ user, onAddressesImported }: AdminOptionsProps) {
   const [profiles, setProfiles] = useState<SelectorProfile[]>([]);
   const [cooldown, setCooldown] = useState(30);
   const [loading, setLoading] = useState(false);
@@ -52,6 +53,7 @@ export function AdminOptions({ user }: AdminOptionsProps) {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importCount, setImportCount] = useState<number | null>(null);
   const [importFileName, setImportFileName] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const [networkProfiles, setNetworkProfiles] = useState<NetworkProfile[]>([]);
   const [networkStatus, setNetworkStatus] = useState<string | null>(null);
   const [networkForm, setNetworkForm] = useState({
@@ -371,6 +373,7 @@ export function AdminOptions({ user }: AdminOptionsProps) {
   };
 
   const handleImportParsed = async (parsed: any[], label: string) => {
+    setIsImporting(true);
     setImportStatus(`Importing from ${label}...`);
 
     try {
@@ -396,8 +399,21 @@ export function AdminOptions({ user }: AdminOptionsProps) {
         return;
       }
 
-      setImportCount(data?.accepted ?? parsed.length);
-      setImportStatus(data?.message || "Accepted for background import");
+      const count = data?.inserted ?? data?.accepted ?? parsed.length;
+      setImportCount(count);
+      setImportStatus(`Imported ${count} addresses — refreshing vault...`);
+
+      if (onAddressesImported) {
+        try {
+          onAddressesImported();
+          setImportStatus(`Imported ${count} addresses. Vault updated.`);
+        } catch (refreshErr) {
+          console.error('[handleImportParsed] post-import refresh failed:', refreshErr);
+          setImportStatus(`Imported ${count} addresses, but vault refresh failed — close and reopen the popup.`);
+        }
+      } else {
+        setImportStatus(`Imported ${count} addresses. Vault updated.`);
+      }
     } catch (err: any) {
       if (err?.name === "AbortError") {
         setImportStatus("Import request timed out.");
@@ -405,6 +421,8 @@ export function AdminOptions({ user }: AdminOptionsProps) {
         console.error(err);
         setImportStatus(err.message || "Import failed");
       }
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -820,8 +838,12 @@ export function AdminOptions({ user }: AdminOptionsProps) {
             <span>{importCount !== null ? `Imported: ${importCount}` : ""}</span>
             <button
               onClick={handleImport}
-              className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors"
+              disabled={isImporting}
+              className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-70 flex items-center gap-2"
             >
+              {isImporting ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : null}
               Import Addresses
             </button>
           </div>
