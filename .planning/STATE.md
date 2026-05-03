@@ -64,6 +64,7 @@ Progress: [██████░░░░] 67%
 - 2026-05-03: Phase 2 detail extracted out of ROADMAP.md and isolated into `.planning/phases/02-address-display-debug/02-DEBUG-CONTEXT.md` so the work can be offloaded to `/gsd-debug` as a self-contained bundle (symptom, hypotheses ranked, touchpoints, repro). REQUIREMENTS traceability table corrected to match the post-swap phase numbers.
 - Phase 2 root cause: schema drift — `addresses.excluded_until` column declared in `schema.sql` but missing from the deployed Supabase table. PostgREST 500 on `?activeOnly=true` was forwarded as the addresses payload by the background handler (no `res.ok` check), causing the popup to silently render "No address available" for every card row.
 - Phase 2 fix path: A — restore the column on the live DB via manual SQL migration (user-authorized) + harden `GET_ADDRESSES` background handler with `res.ok` check so future server 5xx responses surface as visible errors instead of silent empty pools. Path D (derive cooldown from `last_used` + global TTL) considered and rejected — would amputate per-row cooldown design across server, popup, and types.
+- 2026-05-03: Phase 3 design revised — replace cascading state→city dropdowns with a single freeform search input that matches case-insensitive substring against `city` OR `state` (one match in either column is sufficient). Rationale: faster UX, supports partial matches like "tex" hitting both Texas state and Texarkana city. ROADMAP.md Phase 3 + REQUIREMENTS.md FILTER-01..04 updated; requirement IDs preserved for traceability.
 
 ### Pending Todos
 
@@ -79,6 +80,12 @@ None yet.
 - Schema drift cleanup: live `addresses` has `external_id`, `first_name`, `last_name` columns not in `schema.sql`. Reconcile in a separate schema-hygiene pass.
 - `CLAUDE.md` "Address data flow" doc drift: claims `SELECT … WHERE user_id = ?`, but `addresses` has no `user_id` column and the route doesn't filter by user.
 - Sibling background handlers in `src/background/index.ts` likely share the `.then(res => res.json())` anti-pattern — sweep for `res.ok` hardening (out of Phase 2 scope per instruction).
+
+## Quick Tasks Completed
+
+| Date | Slug | Description |
+|------|------|-------------|
+| 2026-05-03 | revise-phase3-freeform-search | Replace Phase 3 cascading state/city dropdowns with single freeform search (matches city OR state) in ROADMAP.md + REQUIREMENTS.md |
 
 ## Deferred Items
 

@@ -2,13 +2,13 @@
 
 ## Overview
 
-Three focused improvements to the Slash Vault Chrome extension based on client feedback. Phase 1 fixes the import sync gap so the popup updates without user intervention. Phase 2 is guided debugging to find and fix why addresses present in Supabase don't appear in the extension at all — this must land before filtering can be tested. Phase 3 then adds state/city address filtering to the popup so users control which addresses pair with cards.
+Three focused improvements to the Slash Vault Chrome extension based on client feedback. Phase 1 fixes the import sync gap so the popup updates without user intervention. Phase 2 is guided debugging to find and fix why addresses present in Supabase don't appear in the extension at all — this must land before filtering can be tested. Phase 3 then adds a freeform address search to the popup so users control which addresses pair with cards.
 
 ## Phases
 
 - [x] **Phase 1: Import Sync** — Popup auto-refreshes cards and addresses after admin import (address-only scope; 2026-05-03)
 - [x] **Phase 2: Address Display Debug** — Investigate and fix "No address available" root cause (root cause: schema drift — `addresses.excluded_until` column missing in live DB; fix: SQL migration handed to user + background handler hardened; 2026-05-03)
-- [ ] **Phase 3: Address Filtering** — State/city filter in popup controls the active address pool
+- [ ] **Phase 3: Address Filtering** — Freeform search in popup (matches city OR state) controls the active address pool
 
 ## Phase Details
 
@@ -36,19 +36,19 @@ Plans:
 **Success criteria, hypotheses, touchpoints, repro steps, and expected artifacts** all live in the bundle above. Run `/gsd-debug` against that file to start work; no plan files are pre-staged here because the fix scope depends on the root cause the debug session uncovers.
 
 ### Phase 3: Address Filtering
-**Goal**: Users can filter the address pool in the popup by state, then optionally by city. Only addresses matching the active filter participate in round-robin pairing; clearing the filter restores the full pool. Each card row shows the address currently paired to it.
+**Goal**: Users can filter the address pool in the popup using a single freeform search field. The search string matches case-insensitively as a substring against either the address's `city` OR `state` — a hit in either field is sufficient. Only matching addresses participate in round-robin pairing; clearing the search restores the full pool. Each card row shows the address currently paired to it.
 **Depends on**: Phase 2 (cannot validate filtering until address display is fixed)
 **Requirements**: FILTER-01, FILTER-02, FILTER-03, FILTER-04
 **UI hint**: yes
 **Success Criteria** (what must be TRUE):
-  1. Selecting a state from the filter shows only addresses from that state paired with cards
-  2. Selecting a city (after state) narrows to city-level addresses
-  3. Clearing the filter restores full round-robin with all active addresses
-  4. Each card row displays the name, city, and state of its currently paired address (or "No address available" only when the pool is genuinely empty)
+  1. Typing a string into the search input filters the active pool to addresses whose `city` OR `state` contains the string (case-insensitive substring match)
+  2. Card pairings update live as the user types — round-robin reruns over the filtered pool on each keystroke
+  3. Clearing the search input restores the full active pool and refreshes pairings
+  4. Each card row displays the name, city, and state of its currently paired address (or "No address available" only when the filtered pool is genuinely empty)
 
 Plans:
-- [ ] 03-01: Add state/city cascading filter UI to the popup (above the card list or in the search area)
-- [ ] 03-02: Wire filter state to `activeAddresses` computation so round-robin uses the filtered pool
+- [ ] 03-01: Add a single freeform search input to the popup (above the card list); case-insensitive substring match against `city` OR `state`
+- [ ] 03-02: Wire the search string into the `activeAddresses` computation so round-robin pairing uses the filtered pool
 
 ## Progress
 

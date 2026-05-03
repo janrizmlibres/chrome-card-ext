@@ -11,10 +11,10 @@
 
 ### Address Filtering
 
-- [ ] **FILTER-01**: User can filter the address pool in the popup by state; only addresses from the selected state participate in round-robin pairing with cards
-- [ ] **FILTER-02**: After selecting a state, user can optionally narrow by city within that state
-- [ ] **FILTER-03**: Clearing the filter restores the full active address pool and updates card pairings accordingly
-- [ ] **FILTER-04**: Each card row displays the address currently paired to it based on the active filter
+- [ ] **FILTER-01**: User can filter the address pool in the popup using a single freeform search input (no separate state/city dropdowns)
+- [ ] **FILTER-02**: The search string is matched as a case-insensitive substring against each address's `city` OR `state`; a match in either field includes the address in the active pool
+- [ ] **FILTER-03**: Clearing the search input restores the full active address pool and updates card pairings accordingly
+- [ ] **FILTER-04**: Each card row displays the address currently paired to it based on the active (filtered) pool
 
 ### Debug
 
