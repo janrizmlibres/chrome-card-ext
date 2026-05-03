@@ -7,7 +7,7 @@ Three focused improvements to the Slash Vault Chrome extension based on client f
 ## Phases
 
 - [x] **Phase 1: Import Sync** — Popup auto-refreshes cards and addresses after admin import (address-only scope; 2026-05-03)
-- [ ] **Phase 2: Address Display Debug** — Investigate and fix "No address available" root cause
+- [x] **Phase 2: Address Display Debug** — Investigate and fix "No address available" root cause (root cause: schema drift — `addresses.excluded_until` column missing in live DB; fix: SQL migration handed to user + background handler hardened; 2026-05-03)
 - [ ] **Phase 3: Address Filtering** — State/city filter in popup controls the active address pool
 
 ## Phase Details
@@ -26,19 +26,14 @@ Three focused improvements to the Slash Vault Chrome extension based on client f
 Plans:
 - [x] 01-01-PLAN.md — Convert addresses-import to sync 200, add isImporting spinner, wire onAddressesImported→fetchAddresses (address-only scope per D-14)
 
-### Phase 2: Address Display Debug
-**Goal**: Identify and fix the root cause of "No address available" appearing on all card rows even when the Supabase `addresses` table is populated. This is an isolated debugging phase — not related to import sync. Must land before Phase 3 so address filtering can be tested against a working address pool.
+### Phase 2: Address Display Debug — *Offloaded to `/gsd-debug`*
+**Goal**: Identify and fix the root cause of "No address available" appearing on all card rows even when the Supabase `addresses` table is populated.
 **Depends on**: Phase 1 (so sync is not a confounding variable)
 **Requirements**: DEBUG-01, DEBUG-02
 **UI hint**: no
-**Success Criteria** (what must be TRUE):
-  1. Root cause is identified and documented (e.g., wrong userId filter, missing field in API response, background message handler gap)
-  2. Addresses stored in Supabase appear correctly in the popup's active address pool
-  3. Card rows show paired addresses from the pool without "No address available" (when addresses exist)
-
-Plans:
-- [ ] 02-01: Trace the GET_ADDRESSES path end-to-end (popup → background → Express → Supabase) to find where data is lost or filtered out
-- [ ] 02-02: Apply fix and verify addresses appear in popup
+**Status**: Detail extracted out of this roadmap and isolated for handoff.
+**Context bundle**: [`phases/02-address-display-debug/02-DEBUG-CONTEXT.md`](phases/02-address-display-debug/02-DEBUG-CONTEXT.md)
+**Success criteria, hypotheses, touchpoints, repro steps, and expected artifacts** all live in the bundle above. Run `/gsd-debug` against that file to start work; no plan files are pre-staged here because the fix scope depends on the root cause the debug session uncovers.
 
 ### Phase 3: Address Filtering
 **Goal**: Users can filter the address pool in the popup by state, then optionally by city. Only addresses matching the active filter participate in round-robin pairing; clearing the filter restores the full pool. Each card row shows the address currently paired to it.
@@ -60,5 +55,5 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Import Sync | 1/1 | Complete (human UAT pending) | 2026-05-03 |
-| 2. Address Display Debug | 0/2 | Not started | - |
+| 2. Address Display Debug | — | Complete (see 02-DEBUG-LOG.md, 02-FIX.md; user SQL migration + UAT pending) | 2026-05-03 |
 | 3. Address Filtering | 0/2 | Not started | - |

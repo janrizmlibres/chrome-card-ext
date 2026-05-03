@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 executed — awaiting human UAT
-last_updated: "2026-05-03T08:00:00.000Z"
-last_activity: 2026-05-03 -- Phase 01 executed (01-01 complete); human verification pending
+stopped_at: Phase 2 fix applied (code) and SQL migration handed to user; Phase 3 next
+last_updated: "2026-05-03T08:32:00.000Z"
+last_activity: 2026-05-03 -- Phase 02 resolved via /gsd-debug (root cause: addresses.excluded_until column missing in live DB; fix: SQL migration + background handler res.ok hardening)
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 1
   completed_plans: 1
-  percent: 33
+  percent: 67
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-03)
 
 **Core value:** Autofill should work reliably — the right card and address fill the right fields with zero friction.
-**Current focus:** Phase 2 — Address Display Debug (next)
+**Current focus:** Phase 3 — Address Filtering (next)
 
 ## Current Position
 
-Phase: 1 of 3 (Import Sync) — execution complete, human UAT pending
-Plan: 1 of 1 in current phase
-Status: Awaiting human verification per 01-VERIFICATION.md
-Last activity: 2026-05-03 -- Phase 01 executed (01-01 complete); human verification pending
+Phase: 2 of 3 (Address Display Debug) — code fix applied; SQL migration + UAT pending
+Plan: n/a (debug-driven phase, no plan files)
+Status: User must run `ALTER TABLE addresses ADD COLUMN IF NOT EXISTS excluded_until timestamptz;` in Supabase, then verify per 02-FIX.md §3
+Last activity: 2026-05-03 -- Phase 02 resolved via /gsd-debug (schema drift on `addresses.excluded_until`)
 
-Progress: [███░░░░░░░] 33%
+Progress: [██████░░░░] 67%
 
 ## Performance Metrics
 
@@ -61,6 +61,9 @@ Progress: [███░░░░░░░] 33%
 - Phase 1: Card import explicitly out of scope — handleGenerateCard already self-refreshes; PROJECT/ROADMAP cleanup deferred to next transition
 - Phase 1: Post-import refresh failures shown inline; no auto-retry (recovery = reopen popup)
 - Roadmap: Swapped Phase 2 ↔ Phase 3 — Address Display Debug now precedes Address Filtering (filtering can't be validated until the "No address available" bug is fixed). Phase 3 (filtering) now depends on Phase 2 (debug).
+- 2026-05-03: Phase 2 detail extracted out of ROADMAP.md and isolated into `.planning/phases/02-address-display-debug/02-DEBUG-CONTEXT.md` so the work can be offloaded to `/gsd-debug` as a self-contained bundle (symptom, hypotheses ranked, touchpoints, repro). REQUIREMENTS traceability table corrected to match the post-swap phase numbers.
+- Phase 2 root cause: schema drift — `addresses.excluded_until` column declared in `schema.sql` but missing from the deployed Supabase table. PostgREST 500 on `?activeOnly=true` was forwarded as the addresses payload by the background handler (no `res.ok` check), causing the popup to silently render "No address available" for every card row.
+- Phase 2 fix path: A — restore the column on the live DB via manual SQL migration (user-authorized) + harden `GET_ADDRESSES` background handler with `res.ok` check so future server 5xx responses surface as visible errors instead of silent empty pools. Path D (derive cooldown from `last_used` + global TTL) considered and rejected — would amputate per-row cooldown design across server, popup, and types.
 
 ### Pending Todos
 
@@ -68,7 +71,14 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 3 root cause unknown — could be userId mismatch in GET_ADDRESSES query, missing `userId` in background message payload, Supabase RLS, or Express filter logic. Will surface during debugging.
+- Phase 2 unblocks once user runs the SQL migration in Supabase (see `.planning/phases/02-address-display-debug/02-FIX.md` §1). Until then, `?activeOnly=true` will continue to 500 server-side; the hardened background handler now surfaces it as a visible error instead of silent emptiness.
+- Latent: `POST /api/autofill/mark_used` writes `excluded_until` (`server/index.ts:530`) and will 500 on the first address autofill until the same SQL migration runs. Resolved by the same migration; explicitly captured in `02-DEBUG-LOG.md` §7.
+
+### Phase 2 Follow-ups (deferred, captured)
+
+- Schema drift cleanup: live `addresses` has `external_id`, `first_name`, `last_name` columns not in `schema.sql`. Reconcile in a separate schema-hygiene pass.
+- `CLAUDE.md` "Address data flow" doc drift: claims `SELECT … WHERE user_id = ?`, but `addresses` has no `user_id` column and the route doesn't filter by user.
+- Sibling background handlers in `src/background/index.ts` likely share the `.then(res => res.json())` anti-pattern — sweep for `res.ok` hardening (out of Phase 2 scope per instruction).
 
 ## Deferred Items
 
@@ -79,5 +89,10 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-03
-Stopped at: Phase 1 executed — awaiting human UAT
-Resume file: .planning/phases/01-import-sync/01-VERIFICATION.md
+Stopped at: Phase 2 fix landed (code) — SQL migration is a manual user step; Phase 3 (Address Filtering) is the next active phase
+Resume files:
+  - Phase 1 UAT: .planning/phases/01-import-sync/01-VERIFICATION.md (still pending)
+  - Phase 2 fix: .planning/phases/02-address-display-debug/02-FIX.md (run SQL migration in §1, then verify per §3)
+  - Phase 2 log: .planning/phases/02-address-display-debug/02-DEBUG-LOG.md
+  - Phase 2 resolved session: .planning/debug/resolved/address-display-empty.md
+  - Phase 3 starting point: .planning/ROADMAP.md §"Phase 3: Address Filtering"

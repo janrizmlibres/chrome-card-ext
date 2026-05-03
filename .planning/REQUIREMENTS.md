@@ -18,8 +18,8 @@
 
 ### Debug
 
-- [ ] **DEBUG-01**: Root cause of "No address available" identified — addresses present in Supabase `addresses` table do not appear in the extension popup
-- [ ] **DEBUG-02**: Bug resolved — addresses stored in Supabase are fetched and displayed correctly in the popup
+- [x] **DEBUG-01**: Root cause of "No address available" identified — addresses present in Supabase `addresses` table do not appear in the extension popup
+- [x] **DEBUG-02**: Bug resolved — addresses stored in Supabase are fetched and displayed correctly in the popup
 
 ## v2 Requirements
 
@@ -44,13 +44,13 @@ Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SYNC-01 | Phase 1 | Pending |
-| FILTER-01 | Phase 2 | Pending |
-| FILTER-02 | Phase 2 | Pending |
-| FILTER-03 | Phase 2 | Pending |
-| FILTER-04 | Phase 2 | Pending |
-| DEBUG-01 | Phase 3 | Pending |
-| DEBUG-02 | Phase 3 | Pending |
+| SYNC-01 | Phase 1 | Complete (UAT pending) |
+| DEBUG-01 | Phase 2 (resolved via `/gsd-debug`) | Complete (2026-05-03; pending user SQL migration + UAT) |
+| DEBUG-02 | Phase 2 (resolved via `/gsd-debug`) | Complete (2026-05-03; pending user SQL migration + UAT) |
+| FILTER-01 | Phase 3 | Pending |
+| FILTER-02 | Phase 3 | Pending |
+| FILTER-03 | Phase 3 | Pending |
+| FILTER-04 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 7 total
