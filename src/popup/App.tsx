@@ -153,6 +153,15 @@ function App() {
       return true;
   });
 
+  const filteredAddresses = activeAddresses.filter((address) => {
+    const query = addressSearch.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      address.city.toLowerCase().includes(query) ||
+      address.state.toLowerCase().includes(query)
+    );
+  });
+
   const hasAutofillCandidates = activeCards.length > 0 || activeAddresses.length > 0;
 
   const formatExpiry = (month: number | null, year: number | null) => {
@@ -422,8 +431,8 @@ function App() {
               ) : filteredCards.length > 0 ? (
                 filteredCards.map((card, idx) => {
                   const pairedAddress =
-                    activeAddresses.length > 0
-                      ? activeAddresses[idx % activeAddresses.length]
+                    filteredAddresses.length > 0
+                      ? filteredAddresses[idx % filteredAddresses.length]
                       : null;
                   const cardDetail = cardDetails[card.id];
                   return (
@@ -481,6 +490,8 @@ function App() {
                           <div className="text-gray-600">
                             Address: {pairedAddress.name} — {pairedAddress.city}, {pairedAddress.state} ({pairedAddress.usage_count} uses)
                           </div>
+                        ) : activeAddresses.length > 0 ? (
+                          <div className="text-gray-400">No address matches filter</div>
                         ) : (
                           <div className="text-gray-400">No address available</div>
                         )}
