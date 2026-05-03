@@ -1,12 +1,9 @@
 # CLAUDE.md — Slash Vault Chrome Extension
 
-<!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
 **Slash Vault** is a Chrome Manifest V3 extension that autofills Slash virtual card details and addresses into web forms. Cards are sourced from the Slash API; addresses are stored in Supabase. Autofill is triggered per-card from the popup or globally via Ctrl+Shift+F.
-<!-- GSD:project-end -->
 
-<!-- GSD:stack-start source:STACK.md -->
 ## Technology Stack
 
 | Layer | Technology |
@@ -26,9 +23,7 @@
 - `npm run build` — Vite build → `dist/` (load unpacked in Chrome)
 - `npm run dev` — Vite watch mode
 - `npm run server` — Express backend (nodemon)
-<!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
 ### File & Naming
@@ -72,9 +67,7 @@ Use `[Scope] message` prefix: `console.log('[fetchAddresses] ...')`, `console.er
 - Cards: `bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-shadow`
 - Primary buttons: `bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg font-medium transition-colors disabled:opacity-70`
 - Inputs: `focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none`
-<!-- GSD:conventions-end -->
 
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
 ```
@@ -93,7 +86,7 @@ Express Backend — server/index.ts (port 3000)
 └── Slash API — source of truth for Card records (api.joinslash.com)
 ```
 
-### Card-Address Pairing — KEY LEARNING
+### Card-Address Pairing
 
 **Cards and addresses have no database relationship.** There is no foreign key, no join table, no per-card address assignment.
 
@@ -107,7 +100,7 @@ const pairedAddress =
 ```
 
 - Card at index 0 gets `addresses[0]`, card at index 1 gets `addresses[1]`, card at index 2 gets `addresses[0]` again, etc.
-- **Filtering is the selection mechanism.** The client controls which address pairs with which card by filtering the address pool by state/city. Filtered pool → new round-robin assignments.
+- **Filtering is the selection mechanism.** Users control which address pairs with which card by filtering the address pool by state/city. Filtered pool → new round-robin assignments.
 - There is no dropdown per card, no sticky per-card memory, and no autofill-time address picker. Do not add these unless explicitly requested.
 
 ### Address data flow
@@ -125,38 +118,9 @@ popup fetchAddresses()
 
 ### Popup refresh lifecycle
 
-`fetchCards()` and `fetchAddresses()` are called only inside `useEffect([user])` — i.e., on login. They are **not** called after admin import.
+`fetchCards()` and `fetchAddresses()` are called only inside `useEffect([user])` — i.e., on login. They are **not** called automatically after admin imports.
 
 ### MV3 constraints
 - Background service worker is not persistent — can be torn down at any time
 - All in-memory state in background can disappear; re-derive from `chrome.storage.local` or the API on each message
 - `chrome.storage.local` keys: `supabase_session`, `currentUser`
-
-<!-- GSD:architecture-end -->
-
-<!-- GSD:skills-start source:skills/ -->
-## Project Skills
-
-No project-local skills defined yet.
-<!-- GSD:skills-end -->
-
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-plan-phase N` or `/gsd-discuss-phase N` to plan the next phase
-- `/gsd-execute-phase N` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` — do not edit manually.
-<!-- GSD:profile-end -->
