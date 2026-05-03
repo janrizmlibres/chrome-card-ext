@@ -316,9 +316,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (activeOnly) params.append('activeOnly', 'true');
 
     fetch(`http://localhost:3000/api/addresses?${params.toString()}`)
-      .then(res => res.json())
-      .then(data => sendResponse({ addresses: data }))
-      .catch(err => sendResponse({ error: err.message }));
+      .then(async (res) => {
+        // Defensive: a non-2xx response carries a JSON error body, NOT an
+        // address array. Forwarding it as `addresses` would cause the popup's
+        // Array.isArray check to fail silently and render every row as
+        // "No address available" (see .planning/debug/resolved/address-display-empty.md).
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const message =
+            (body && typeof body === 'object' && 'error' in body && body.error) ||
+            `HTTP ${res.status} ${res.statusText}`;
+          console.error('[GET_ADDRESSES] Backend returned non-2xx:', res.status, message);
+          sendResponse({ error: message });
+          return;
+        }
+        sendResponse({ addresses: body });
+      })
+      .catch((err) => {
+        console.error('[GET_ADDRESSES] fetch failed:', err);
+        sendResponse({ error: err.message });
+      });
     return true;
   }
 
