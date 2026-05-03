@@ -44,18 +44,18 @@ Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SYNC-01 | — | Pending |
-| FILTER-01 | — | Pending |
-| FILTER-02 | — | Pending |
-| FILTER-03 | — | Pending |
-| FILTER-04 | — | Pending |
-| DEBUG-01 | — | Pending |
-| DEBUG-02 | — | Pending |
+| SYNC-01 | Phase 1 | Pending |
+| FILTER-01 | Phase 2 | Pending |
+| FILTER-02 | Phase 2 | Pending |
+| FILTER-03 | Phase 2 | Pending |
+| FILTER-04 | Phase 2 | Pending |
+| DEBUG-01 | Phase 3 | Pending |
+| DEBUG-02 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 7 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 7 ⚠️
+- Mapped to phases: 7
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-03*
