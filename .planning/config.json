@@ -1,0 +1,16 @@
+{
+  "workflow": "gsd",
+  "created_at": "2026-05-03",
+  "project_mode": "existing_codebase",
+  "planning_style": "implementation_ready",
+  "verification": {
+    "require_build": true,
+    "require_manual_uat": true,
+    "browser_extension_reload_required": true
+  },
+  "preferences": {
+    "ask_before_scope_expansion": true,
+    "commit_planning_artifacts": true,
+    "favor_existing_patterns": true
+  }
+}
