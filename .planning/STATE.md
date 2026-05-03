@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_execute
-stopped_at: Phase 3 planned (03-01, 03-02); ready for /gsd-execute-phase 3
-last_updated: "2026-05-03T09:28:00.000Z"
-last_activity: 2026-05-03 -- Phase 3 plans created and verified (PASSED, no revision iterations); 2 plans across 2 waves
+status: phase_complete
+stopped_at: Phase 3 executed and verified; all 3 phases complete
+last_updated: "2026-05-03T09:36:00.000Z"
+last_activity: 2026-05-03 -- Phase 3 (Address Filtering) executed end-to-end; both plans (03-01 UI surface, 03-02 filter wiring) shipped; build clean
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 3
-  completed_plans: 1
-  percent: 67
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-03)
 
 **Core value:** Autofill should work reliably — the right card and address fill the right fields with zero friction.
-**Current focus:** Phase 3 — Address Filtering (next)
+**Current focus:** Milestone v1.0 phases all executed; pending human UAT (Phase 1, Phase 2 SQL migration, Phase 3 manual smoke)
 
 ## Current Position
 
-Phase: 3 of 3 (Address Filtering) — planned; ready to execute
-Plan: 03-01 (UI surface, wave 1) + 03-02 (filter wiring + empty-state, wave 2, depends_on 03-01)
-Status: Plans verified PASSED on first pass; run `/gsd-execute-phase 3`
-Last activity: 2026-05-03 -- Phase 3 plans created (committed f37bd29) and verified by gsd-plan-checker
+Phase: 3 of 3 (Address Filtering) — Complete
+Plans: 03-01 (UI surface) + 03-02 (filter wiring + empty-state) — both shipped 2026-05-03
+Status: All 3 phases done; awaiting human UAT
+Last activity: 2026-05-03 -- Phase 3 executed (commits 1a3115a, 18390b9, d27dbc8, 7a693e3); build clean
 
-Progress: [██████░░░░] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -104,10 +104,11 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-03
-Stopped at: Phase 2 fix landed (code) — SQL migration is a manual user step; Phase 3 (Address Filtering) is the next active phase
+Stopped at: All 3 phases executed; manual smoke + Phase 2 SQL migration are the only outstanding user actions
 Resume files:
   - Phase 1 UAT: .planning/phases/01-import-sync/01-VERIFICATION.md (still pending)
   - Phase 2 fix: .planning/phases/02-address-display-debug/02-FIX.md (run SQL migration in §1, then verify per §3)
   - Phase 2 log: .planning/phases/02-address-display-debug/02-DEBUG-LOG.md
   - Phase 2 resolved session: .planning/debug/resolved/address-display-empty.md
-  - Phase 3 starting point: .planning/ROADMAP.md §"Phase 3: Address Filtering"
+  - Phase 3 summaries: .planning/phases/03-address-filtering/03-01-SUMMARY.md, 03-02-SUMMARY.md
+  - Phase 3 manual smoke: load `npm run build` output as unpacked extension, log in, type a city/state substring into the second search input — pairings should narrow live; clearing restores them; non-matching string shows "No address matches filter"

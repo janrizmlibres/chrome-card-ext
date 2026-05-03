@@ -8,7 +8,7 @@ Three focused improvements to the Slash Vault Chrome extension based on client f
 
 - [x] **Phase 1: Import Sync** — Popup auto-refreshes cards and addresses after admin import (address-only scope; 2026-05-03)
 - [x] **Phase 2: Address Display Debug** — Investigate and fix "No address available" root cause (root cause: schema drift — `addresses.excluded_until` column missing in live DB; fix: SQL migration handed to user + background handler hardened; 2026-05-03)
-- [ ] **Phase 3: Address Filtering** — Freeform search in popup (matches city OR state) controls the active address pool
+- [x] **Phase 3: Address Filtering** — Freeform search in popup (matches city OR state) controls the active address pool (2026-05-03)
 
 ## Phase Details
 
@@ -49,10 +49,10 @@ Plans:
 **Plans:** 2 plans
 
 **Wave 1**
-- [ ] 03-01-PLAN.md — Add `addressSearch` useState + render second freeform search input below the card-search input in the popup header (FILTER-01)
+- [x] 03-01-PLAN.md — Add `addressSearch` useState + render second freeform search input below the card-search input in the popup header (FILTER-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 03-02-PLAN.md — Derive `filteredAddresses` from `activeAddresses` + `addressSearch`, switch round-robin pairing to `filteredAddresses`, add distinct "No address matches filter" empty-state branch (FILTER-02, FILTER-03, FILTER-04)
+- [x] 03-02-PLAN.md — Derive `filteredAddresses` from `activeAddresses` + `addressSearch`, switch round-robin pairing to `filteredAddresses`, add distinct "No address matches filter" empty-state branch (FILTER-02, FILTER-03, FILTER-04)
 
 **Cross-cutting constraints** *(must hold across both plans)*
 - Round-robin pairing invariant preserved — no per-card sticky/dropdown/picker (CLAUDE.md "Card-Address Pairing")
@@ -66,4 +66,4 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Import Sync | 1/1 | Complete (human UAT pending) | 2026-05-03 |
 | 2. Address Display Debug | — | Complete (see 02-DEBUG-LOG.md, 02-FIX.md; user SQL migration + UAT pending) | 2026-05-03 |
-| 3. Address Filtering | 0/2 | Not started | - |
+| 3. Address Filtering | 2/2 | Complete | 2026-05-03 |
