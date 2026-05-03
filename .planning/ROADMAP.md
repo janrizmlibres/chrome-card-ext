@@ -47,9 +47,18 @@ Plans:
   4. Each card row displays the name, city, and state of its currently paired address (or "No address available" only when the filtered pool is genuinely empty)
 
 **Plans:** 2 plans
-Plans:
+
+**Wave 1**
 - [ ] 03-01-PLAN.md — Add `addressSearch` useState + render second freeform search input below the card-search input in the popup header (FILTER-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 03-02-PLAN.md — Derive `filteredAddresses` from `activeAddresses` + `addressSearch`, switch round-robin pairing to `filteredAddresses`, add distinct "No address matches filter" empty-state branch (FILTER-02, FILTER-03, FILTER-04)
+
+**Cross-cutting constraints** *(must hold across both plans)*
+- Round-robin pairing invariant preserved — no per-card sticky/dropdown/picker (CLAUDE.md "Card-Address Pairing")
+- Popup-only — no backend / message-type / Supabase changes (D-14)
+- No persistence — `addressSearch` resets on every popup open (D-13)
+- Exclusion-first — `filteredAddresses` derives from `activeAddresses`, not raw `addresses` (D-09)
 
 ## Progress
 
