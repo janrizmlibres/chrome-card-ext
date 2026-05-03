@@ -20,6 +20,7 @@ function App() {
   const [cards, setCards] = useState<Card[]>([]);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [addressSearch, setAddressSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [cardDetails, setCardDetails] = useState<
     Record<string, { cvv?: string | null }>
@@ -377,6 +378,16 @@ function App() {
                   placeholder="Search cards..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                />
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Filter addresses by city or state"
+                  value={addressSearch}
+                  onChange={(e) => setAddressSearch(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                 />
               </div>
